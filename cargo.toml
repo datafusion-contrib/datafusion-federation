@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+
+members = ["datafusion-federation", "examples", "sources/sql"]
+
+[patch.crates-io]
+# connectorx = { path = "../connector-x/connectorx" }
+# datafusion = { path = "../arrow-datafusion/datafusion/core" }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+
+
+[workspace.dependencies]
+async-trait = "0.1.77"
+datafusion = "34.0.0"

@@ -1,0 +1,23 @@
+[package]
+name = "datafusion-federation-sql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[lib]
+name = "datafusion_federation_sql"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+# connectorx = { version = "0.3.2", features = ["src_sqlite"] }
+# https://github.com/sfu-db/connector-x/pull/555
+connectorx = { git = "https://github.com/sfu-db/connector-x.git", rev = "fa0fc7bc", features = [
+    "dst_arrow",
+] }
+datafusion.workspace = true
+datafusion-federation.path = "../../datafusion-federation"
+# derive_builder = "0.13.0"
+futures = "0.3.30"
+tokio = "1.35.1"
