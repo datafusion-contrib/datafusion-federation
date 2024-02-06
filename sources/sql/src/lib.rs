@@ -17,7 +17,6 @@ use executor::SQLExecutor;
 
 pub mod executor;
 mod schema;
-use futures::executor::block_on;
 pub use schema::*;
 
 // #[macro_use]
@@ -170,6 +169,6 @@ impl ExecutionPlan for VirtualExecutionPlan {
         let ast = query_to_sql(&self.plan)?;
         let query = format!("{ast}");
 
-        block_on(self.executor.execute(query.as_str()))
+        self.executor.execute(query.as_str())
     }
 }
