@@ -73,12 +73,7 @@ impl SQLTableSource {
     pub async fn new(provider: Arc<SQLFederationProvider>, table_name: String) -> Result<Self> {
         // Simple schema inference
         let query = format!("SELECT * FROM {table_name} LIMIT 1");
-        let schema = provider
-            .clone()
-            .executor
-            .execute(query.as_str())
-            .await?
-            .schema();
+        let schema = provider.clone().executor.execute(query.as_str())?.schema();
 
         Self::new_with_schema(provider, table_name, schema)
     }
