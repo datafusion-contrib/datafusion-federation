@@ -1,7 +1,12 @@
 [workspace]
 resolver = "2"
 
-members = ["datafusion-federation", "examples", "sources/sql"]
+members = [
+    "datafusion-federation",
+    "examples",
+    "sources/sql",
+    "sources/flight-sql",
+]
 
 [patch.crates-io]
 # connectorx = { path = "../connector-x/connectorx" }

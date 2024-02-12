@@ -13,11 +13,13 @@ use datafusion::{
     physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, SendableRecordBatchStream},
 };
 use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
-use executor::SQLExecutor;
 
-pub mod executor;
 mod schema;
 pub use schema::*;
+
+pub mod connectorx;
+mod executor;
+pub use executor::*;
 
 // #[macro_use]
 // extern crate derive_builder;

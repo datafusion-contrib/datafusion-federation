@@ -8,7 +8,7 @@ use datafusion::{
     execution::context::{SessionContext, SessionState},
 };
 use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
-use datafusion_federation_sql::{executor::CXExecutor, SQLFederationProvider, SQLSchemaProvider};
+use datafusion_federation_sql::{connectorx::CXExecutor, SQLFederationProvider, SQLSchemaProvider};
 
 #[tokio::main]
 async fn main() -> Result<()> {

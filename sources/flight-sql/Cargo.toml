@@ -1,0 +1,22 @@
+[package]
+name = "datafusion-federation-flight-sql"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[lib]
+name = "datafusion_federation_flight_sql"
+path = "src/lib.rs"
+
+[dependencies]
+async-trait.workspace = true
+datafusion.workspace = true
+datafusion-federation.path = "../../datafusion-federation"
+datafusion-federation-sql.path = "../sql"
+futures = "0.3.30"
+tonic = "0.10.2"
+prost = "0.12.3"
+arrow = "49.0.0"
+arrow-flight = { version = "49.0.0", features = ["flight-sql-experimental"] }
+log = "0.4.20"
