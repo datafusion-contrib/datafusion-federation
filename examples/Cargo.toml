@@ -11,7 +11,9 @@ async-trait.workspace = true
 datafusion.workspace = true
 datafusion-federation.path = "../datafusion-federation"
 datafusion-federation-sql.path = "../sources/sql"
+datafusion-federation-flight-sql.path = "../sources/flight-sql"
 connectorx = { git = "https://github.com/sfu-db/connector-x.git", rev = "fa0fc7bc", features = [
     "dst_arrow",
     "src_sqlite",
 ] }
+tonic = "0.10.2"
