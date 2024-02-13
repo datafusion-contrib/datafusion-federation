@@ -27,7 +27,8 @@ async fn main() -> Result<()> {
 
     // Remote context
     tokio::spawn(async move {
-        FlightSqlService::run_sql(dsn.clone(), remote_ctx.state())
+        FlightSqlService::new(remote_ctx.state())
+            .serve(dsn.clone())
             .await
             .unwrap();
     });
