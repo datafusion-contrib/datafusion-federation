@@ -171,6 +171,6 @@ impl ExecutionPlan for VirtualExecutionPlan {
         let ast = query_to_sql(&self.plan)?;
         let query = format!("{ast}");
 
-        self.executor.execute(query.as_str())
+        self.executor.execute(query.as_str(), self.schema())
     }
 }
