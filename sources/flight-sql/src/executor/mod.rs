@@ -1,27 +1,27 @@
-use arrow::{datatypes::Schema, error::ArrowError, record_batch};
-use arrow_flight::{decode::FlightRecordBatchStream, error::FlightError, sql::client::FlightSqlServiceClient, FlightInfo, Ticket};
+use arrow::{datatypes::Schema, error::ArrowError};
+use arrow_flight::{sql::client::FlightSqlServiceClient, FlightInfo};
 use async_trait::async_trait;
 use datafusion::{
     error::{DataFusionError, Result},
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
 };
 use datafusion_federation_sql::SQLExecutor;
-use futures::{executor, StreamExt, TryStreamExt};
-use log::Record;
+use futures::{executor, TryStreamExt};
+
 use std::sync::Arc;
 use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
 
 /// Authentication options for FlightSQL Endpoints
 #[derive(Clone)]
-pub enum FlightSQLAuth{
+pub enum FlightSQLAuth {
     Basic(BasicAuth),
     PKI(PKIAuth),
-    Unsecured
+    Unsecured,
 }
 
 /// Basic username and password authorization for FlightSQL Endpoints
 #[derive(Clone)]
-pub struct BasicAuth{
+pub struct BasicAuth {
     username: String,
     password: String,
 }
@@ -39,12 +39,12 @@ pub struct PKIAuth {
 
 pub struct FlightSQLExecutor {
     context: String,
-    auth: FlightSQLAuth
+    auth: FlightSQLAuth,
 }
 
 impl FlightSQLExecutor {
     pub fn new(dns: String, auth: FlightSQLAuth) -> Self {
-        Self { context: dns , auth}
+        Self { context: dns, auth }
     }
 
     pub fn context(&mut self, context: String) {
@@ -54,30 +54,35 @@ impl FlightSQLExecutor {
 
 /// Creates a new [FlightSqlServiceClient] for the passed endpoint. Completes the relevant auth configurations
 /// or handshake as appropriate for the passed [FlightSQLAuth] variant.
-async fn new_client(dns: String, auth: FlightSQLAuth) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
+async fn new_client(
+    dns: String,
+    auth: FlightSQLAuth,
+) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
     let endpoint = Endpoint::new(dns).map_err(tx_error_to_df)?;
-    
-    match auth{
-        FlightSQLAuth::Basic(basic) =>{
+
+    match auth {
+        FlightSQLAuth::Basic(basic) => {
             let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
             let mut client = FlightSqlServiceClient::new(channel);
             client
                 .handshake(basic.username.as_str(), basic.password.as_str())
                 .await?;
             Ok(client)
-        },
+        }
         FlightSQLAuth::PKI(pki) => {
-            let endpoint = endpoint.tls_config(
-                ClientTlsConfig::new()
-                    .identity(Identity::from_pem(
-                        pki.client_cert_file.as_str(),
-                        pki.client_key_file.as_str(),
-                    ))
-                    .ca_certificate(Certificate::from_pem(pki.ca_cert_bundle.as_str())),
-            ).map_err(tx_error_to_df)?;
+            let endpoint = endpoint
+                .tls_config(
+                    ClientTlsConfig::new()
+                        .identity(Identity::from_pem(
+                            pki.client_cert_file.as_str(),
+                            pki.client_key_file.as_str(),
+                        ))
+                        .ca_certificate(Certificate::from_pem(pki.ca_cert_bundle.as_str())),
+                )
+                .map_err(tx_error_to_df)?;
             let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
             Ok(FlightSqlServiceClient::new(channel))
-        },
+        }
         FlightSQLAuth::Unsecured => {
             let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
             Ok(FlightSqlServiceClient::new(channel))
@@ -86,10 +91,11 @@ async fn new_client(dns: String, auth: FlightSQLAuth) -> Result<FlightSqlService
 }
 
 async fn make_flight_sql_stream(
-    dns: String, 
+    dns: String,
     auth: FlightSQLAuth,
     flight_info: FlightInfo,
-    schema: Arc<Schema>) -> Result<SendableRecordBatchStream>{
+    schema: Arc<Schema>,
+) -> Result<SendableRecordBatchStream> {
     let client = &mut new_client(dns, auth).await?;
     let mut flight_data_streams = Vec::with_capacity(flight_info.endpoint.len());
     for endpoint in flight_info.endpoint {
@@ -103,7 +109,10 @@ async fn make_flight_sql_stream(
     let record_batch_stream = futures::stream::select_all(flight_data_streams)
         .map_err(|e| DataFusionError::External(Box::new(e)));
 
-    Ok(Box::pin(RecordBatchStreamAdapter::new(schema, record_batch_stream)))
+    Ok(Box::pin(RecordBatchStreamAdapter::new(
+        schema,
+        record_batch_stream,
+    )))
 }
 
 #[async_trait]
@@ -122,21 +131,23 @@ impl SQLExecutor for FlightSQLExecutor {
             client.execute(sql.to_string(), None).await
         })
         .map_err(arrow_error_to_df)?;
-        
-        let schema = Arc::new(flight_info.clone().try_decode_schema().map_err(arrow_error_to_df)?);
+
+        let schema = Arc::new(
+            flight_info
+                .clone()
+                .try_decode_schema()
+                .map_err(arrow_error_to_df)?,
+        );
 
         let future_stream = make_flight_sql_stream(
-            self.context.clone(), 
+            self.context.clone(),
             self.auth.clone(),
-            flight_info, 
-            schema.clone()
+            flight_info,
+            schema.clone(),
         );
         let stream = futures::stream::once(future_stream).try_flatten();
 
-        Ok(Box::pin(RecordBatchStreamAdapter::new(
-            schema,
-            stream,
-        )))
+        Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 }
 
