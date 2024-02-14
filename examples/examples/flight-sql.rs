@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use datafusion::{
     catalog::schema::SchemaProvider,
-    error::Result,
+    error::{DataFusionError, Result},
     execution::{
         context::{SessionContext, SessionState},
         options::CsvReadOptions,
@@ -10,11 +10,14 @@ use datafusion::{
 };
 use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
 use datafusion_federation_flight_sql::{
-    executor::{FlightSQLAuth, FlightSQLExecutor},
+    executor::{FlightSQLExecutor},
     server::FlightSqlService,
 };
 use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
 use tokio::time::sleep;
+use tonic::transport::Endpoint;
+use arrow_flight::{sql::client::FlightSqlServiceClient, FlightInfo};
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -52,7 +55,8 @@ async fn main() -> Result<()> {
     // Register schema
     // TODO: table inference
     let dsn: String = "http://localhost:50051".to_string();
-    let executor = Arc::new(FlightSQLExecutor::new(dsn, FlightSQLAuth::Unsecured));
+    let client = new_client(dsn.clone()).await?;
+    let executor = Arc::new(FlightSQLExecutor::new(dsn, client));
     let provider = Arc::new(SQLFederationProvider::new(executor));
     let schema_provider = Arc::new(SQLSchemaProvider::new(provider, known_tables).await?);
     overwrite_default_schema(&state, schema_provider)?;
@@ -78,4 +82,18 @@ fn overwrite_default_schema(state: &SessionState, schema: Arc<dyn SchemaProvider
     catalog.register_schema(options.default_schema.as_str(), schema)?;
 
     Ok(())
+}
+
+/// Creates a new [FlightSqlServiceClient] for the passed endpoint. Completes the relevant auth configurations
+/// or handshake as appropriate for the passed [FlightSQLAuth] variant.
+async fn new_client(
+    dsn: String,
+) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
+    let endpoint = Endpoint::new(dsn).map_err(tx_error_to_df)?;
+    let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
+    Ok(FlightSqlServiceClient::new(channel))
+}
+
+fn tx_error_to_df(err: tonic::transport::Error) -> DataFusionError {
+    DataFusionError::External(format!("failed to connect: {err:?}").into())
 }

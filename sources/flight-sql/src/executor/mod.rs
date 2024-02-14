@@ -9,42 +9,16 @@ use datafusion_federation_sql::SQLExecutor;
 use futures::{executor, TryStreamExt};
 
 use std::sync::Arc;
-use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Identity};
-
-/// Authentication options for FlightSQL Endpoints
-#[derive(Clone)]
-pub enum FlightSQLAuth {
-    Basic(BasicAuth),
-    PKI(PKIAuth),
-    Unsecured,
-}
-
-/// Basic username and password authorization for FlightSQL Endpoints
-#[derive(Clone)]
-pub struct BasicAuth {
-    username: String,
-    password: String,
-}
-
-/// Contains options for completing mTLS/PKI authentication configuration of Tonic client
-#[derive(Clone)]
-pub struct PKIAuth {
-    /// The public x509 cert pem encoded used to auth with the FlightSQL server
-    pub client_cert_file: Arc<[u8]>,
-    /// The private key pem encoded used to validate the public client cert
-    pub client_key_file: Arc<[u8]>,
-    /// The bundle of trusted CAcerts for validating the FlightSQL server
-    pub ca_cert_bundle: Arc<[u8]>,
-}
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 
 pub struct FlightSQLExecutor {
     context: String,
-    auth: FlightSQLAuth,
+    client: FlightSqlServiceClient<Channel>,
 }
 
 impl FlightSQLExecutor {
-    pub fn new(dns: String, auth: FlightSQLAuth) -> Self {
-        Self { context: dns, auth }
+    pub fn new(dsn: String, client: FlightSqlServiceClient<Channel>) -> Self {
+        Self { context: dsn, client }
     }
 
     pub fn context(&mut self, context: String) {
@@ -52,51 +26,11 @@ impl FlightSQLExecutor {
     }
 }
 
-/// Creates a new [FlightSqlServiceClient] for the passed endpoint. Completes the relevant auth configurations
-/// or handshake as appropriate for the passed [FlightSQLAuth] variant.
-async fn new_client(
-    dns: String,
-    auth: FlightSQLAuth,
-) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
-    let endpoint = Endpoint::new(dns).map_err(tx_error_to_df)?;
-
-    match auth {
-        FlightSQLAuth::Basic(basic) => {
-            let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
-            let mut client = FlightSqlServiceClient::new(channel);
-            client
-                .handshake(basic.username.as_str(), basic.password.as_str())
-                .await?;
-            Ok(client)
-        }
-        FlightSQLAuth::PKI(pki) => {
-            let endpoint = endpoint
-                .tls_config(
-                    ClientTlsConfig::new()
-                        .identity(Identity::from_pem(
-                            pki.client_cert_file.as_ref(),
-                            pki.client_key_file.as_ref(),
-                        ))
-                        .ca_certificate(Certificate::from_pem(pki.ca_cert_bundle.as_ref())),
-                )
-                .map_err(tx_error_to_df)?;
-            let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
-            Ok(FlightSqlServiceClient::new(channel))
-        }
-        FlightSQLAuth::Unsecured => {
-            let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
-            Ok(FlightSqlServiceClient::new(channel))
-        }
-    }
-}
-
 async fn make_flight_sql_stream(
-    dns: String,
-    auth: FlightSQLAuth,
+    mut client: FlightSqlServiceClient<Channel>,
     flight_info: FlightInfo,
     schema: Arc<Schema>,
 ) -> Result<SendableRecordBatchStream> {
-    let client = &mut new_client(dns, auth).await?;
     let mut flight_data_streams = Vec::with_capacity(flight_info.endpoint.len());
     for endpoint in flight_info.endpoint {
         let ticket = endpoint.ticket.ok_or(DataFusionError::Execution(
@@ -124,10 +58,8 @@ impl SQLExecutor for FlightSQLExecutor {
         Some(self.context.clone())
     }
     fn execute(&self, sql: &str) -> Result<SendableRecordBatchStream> {
-        let dns = self.context.clone();
-        let auth = self.auth.clone();
+        let mut client = self.client.clone();
         let flight_info = executor::block_on(async move {
-            let client = &mut new_client(dns, auth.clone()).await?;
             client.execute(sql.to_string(), None).await
         })
         .map_err(arrow_error_to_df)?;
@@ -140,8 +72,7 @@ impl SQLExecutor for FlightSQLExecutor {
         );
 
         let future_stream = make_flight_sql_stream(
-            self.context.clone(),
-            self.auth.clone(),
+            self.client.clone(),
             flight_info,
             schema.clone(),
         );
@@ -149,10 +80,6 @@ impl SQLExecutor for FlightSQLExecutor {
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
-}
-
-fn tx_error_to_df(err: tonic::transport::Error) -> DataFusionError {
-    DataFusionError::External(format!("failed to connect: {err:?}").into())
 }
 
 fn arrow_error_to_df(err: ArrowError) -> DataFusionError {
