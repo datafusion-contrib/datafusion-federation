@@ -29,12 +29,12 @@ pub struct BasicAuth {
 /// Contains options for completing mTLS/PKI authentication configuration of Tonic client
 #[derive(Clone)]
 pub struct PKIAuth {
-    /// The public x509 cert pem file used to auth with the FlightSQL server
-    pub client_cert_file: String,
-    /// The private key pem file used to validate the public client cert
-    pub client_key_file: String,
+    /// The public x509 cert pem encoded used to auth with the FlightSQL server
+    pub client_cert_file: Arc<[u8]>,
+    /// The private key pem encoded used to validate the public client cert
+    pub client_key_file: Arc<[u8]>,
     /// The bundle of trusted CAcerts for validating the FlightSQL server
-    pub ca_cert_bundle: String,
+    pub ca_cert_bundle: Arc<[u8]>,
 }
 
 pub struct FlightSQLExecutor {
@@ -74,10 +74,10 @@ async fn new_client(
                 .tls_config(
                     ClientTlsConfig::new()
                         .identity(Identity::from_pem(
-                            pki.client_cert_file.as_str(),
-                            pki.client_key_file.as_str(),
+                            pki.client_cert_file.as_ref(),
+                            pki.client_key_file.as_ref(),
                         ))
-                        .ca_certificate(Certificate::from_pem(pki.ca_cert_bundle.as_str())),
+                        .ca_certificate(Certificate::from_pem(pki.ca_cert_bundle.as_ref())),
                 )
                 .map_err(tx_error_to_df)?;
             let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
