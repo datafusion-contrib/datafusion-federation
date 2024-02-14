@@ -68,9 +68,11 @@ impl SQLExecutor for CXExecutor {
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
-    async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef>{
+    async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef> {
         let conn = self.conn.clone();
-        let query: CXQuery = format!("select * from {table_name} limit 1").as_str().into();
+        let query: CXQuery = format!("select * from {table_name} limit 1")
+            .as_str()
+            .into();
 
         let dst = get_arrow(&conn, None, &[query.clone()]).map_err(cx_out_error_to_df)?;
         let schema = schema_to_lowercase(dst.arrow_schema());
