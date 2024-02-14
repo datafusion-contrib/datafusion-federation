@@ -9,7 +9,7 @@ use datafusion_federation_sql::SQLExecutor;
 use futures::{executor, TryStreamExt};
 
 use std::sync::Arc;
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
+use tonic::transport::Channel;
 
 pub struct FlightSQLExecutor {
     context: String,
@@ -18,7 +18,10 @@ pub struct FlightSQLExecutor {
 
 impl FlightSQLExecutor {
     pub fn new(dsn: String, client: FlightSqlServiceClient<Channel>) -> Self {
-        Self { context: dsn, client }
+        Self {
+            context: dsn,
+            client,
+        }
     }
 
     pub fn context(&mut self, context: String) {
@@ -59,10 +62,9 @@ impl SQLExecutor for FlightSQLExecutor {
     }
     fn execute(&self, sql: &str) -> Result<SendableRecordBatchStream> {
         let mut client = self.client.clone();
-        let flight_info = executor::block_on(async move {
-            client.execute(sql.to_string(), None).await
-        })
-        .map_err(arrow_error_to_df)?;
+        let flight_info =
+            executor::block_on(async move { client.execute(sql.to_string(), None).await })
+                .map_err(arrow_error_to_df)?;
 
         let schema = Arc::new(
             flight_info
@@ -71,11 +73,8 @@ impl SQLExecutor for FlightSQLExecutor {
                 .map_err(arrow_error_to_df)?,
         );
 
-        let future_stream = make_flight_sql_stream(
-            self.client.clone(),
-            flight_info,
-            schema.clone(),
-        );
+        let future_stream =
+            make_flight_sql_stream(self.client.clone(), flight_info, schema.clone());
         let stream = futures::stream::once(future_stream).try_flatten();
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
