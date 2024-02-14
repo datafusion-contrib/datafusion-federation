@@ -9,7 +9,10 @@ use datafusion::{
     },
 };
 use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
-use datafusion_federation_flight_sql::{executor::{FlightSQLAuth, FlightSQLExecutor}, server::FlightSqlService};
+use datafusion_federation_flight_sql::{
+    executor::{FlightSQLAuth, FlightSQLExecutor},
+    server::FlightSqlService,
+};
 use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
 use tokio::time::sleep;
 
