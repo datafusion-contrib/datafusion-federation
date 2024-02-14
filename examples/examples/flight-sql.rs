@@ -9,7 +9,7 @@ use datafusion::{
     },
 };
 use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
-use datafusion_federation_flight_sql::{executor::FlightSQLExecutor, server::FlightSqlService};
+use datafusion_federation_flight_sql::{executor::{FlightSQLAuth, FlightSQLExecutor}, server::FlightSqlService};
 use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
 use tokio::time::sleep;
 
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     // Register schema
     // TODO: table inference
     let dsn: String = "http://localhost:50051".to_string();
-    let executor = Arc::new(FlightSQLExecutor::new(dsn));
+    let executor = Arc::new(FlightSQLExecutor::new(dsn, FlightSQLAuth::Unsecured));
     let provider = Arc::new(SQLFederationProvider::new(executor));
     let schema_provider = Arc::new(SQLSchemaProvider::new(provider, known_tables).await?);
     overwrite_default_schema(&state, schema_provider)?;
