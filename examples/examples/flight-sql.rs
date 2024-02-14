@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use arrow_flight::sql::client::FlightSqlServiceClient;
 use datafusion::{
     catalog::schema::SchemaProvider,
     error::{DataFusionError, Result},
@@ -9,15 +10,10 @@ use datafusion::{
     },
 };
 use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
-use datafusion_federation_flight_sql::{
-    executor::{FlightSQLExecutor},
-    server::FlightSqlService,
-};
+use datafusion_federation_flight_sql::{executor::FlightSQLExecutor, server::FlightSqlService};
 use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
 use tokio::time::sleep;
 use tonic::transport::Endpoint;
-use arrow_flight::{sql::client::FlightSqlServiceClient, FlightInfo};
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -86,9 +82,7 @@ fn overwrite_default_schema(state: &SessionState, schema: Arc<dyn SchemaProvider
 
 /// Creates a new [FlightSqlServiceClient] for the passed endpoint. Completes the relevant auth configurations
 /// or handshake as appropriate for the passed [FlightSQLAuth] variant.
-async fn new_client(
-    dsn: String,
-) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
+async fn new_client(dsn: String) -> Result<FlightSqlServiceClient<tonic::transport::Channel>> {
     let endpoint = Endpoint::new(dsn).map_err(tx_error_to_df)?;
     let channel = endpoint.connect().await.map_err(tx_error_to_df)?;
     Ok(FlightSqlServiceClient::new(channel))
