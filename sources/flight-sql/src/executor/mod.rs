@@ -1,12 +1,12 @@
-use arrow::{datatypes::Schema, error::ArrowError};
-use arrow_flight::{sql::client::FlightSqlServiceClient, FlightInfo};
+use arrow::{datatypes::SchemaRef, error::ArrowError};
+use arrow_flight::sql::client::FlightSqlServiceClient;
 use async_trait::async_trait;
 use datafusion::{
     error::{DataFusionError, Result},
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
 };
 use datafusion_federation_sql::SQLExecutor;
-use futures::{executor, TryStreamExt};
+use futures::TryStreamExt;
 
 use std::sync::Arc;
 use tonic::transport::Channel;
@@ -30,10 +30,15 @@ impl FlightSQLExecutor {
 }
 
 async fn make_flight_sql_stream(
+    sql: String,
     mut client: FlightSqlServiceClient<Channel>,
-    flight_info: FlightInfo,
-    schema: Arc<Schema>,
+    schema: SchemaRef,
 ) -> Result<SendableRecordBatchStream> {
+    let flight_info = client
+        .execute(sql.to_string(), None)
+        .await
+        .map_err(arrow_error_to_df)?;
+
     let mut flight_data_streams = Vec::with_capacity(flight_info.endpoint.len());
     for endpoint in flight_info.endpoint {
         let ticket = endpoint.ticket.ok_or(DataFusionError::Execution(
@@ -60,24 +65,27 @@ impl SQLExecutor for FlightSQLExecutor {
     fn compute_context(&self) -> Option<String> {
         Some(self.context.clone())
     }
-    fn execute(&self, sql: &str) -> Result<SendableRecordBatchStream> {
-        let mut client = self.client.clone();
-        let flight_info =
-            executor::block_on(async move { client.execute(sql.to_string(), None).await })
-                .map_err(arrow_error_to_df)?;
-
-        let schema = Arc::new(
-            flight_info
-                .clone()
-                .try_decode_schema()
-                .map_err(arrow_error_to_df)?,
-        );
-
+    fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
         let future_stream =
-            make_flight_sql_stream(self.client.clone(), flight_info, schema.clone());
+            make_flight_sql_stream(sql.to_string(), self.client.clone(), schema.clone());
         let stream = futures::stream::once(future_stream).try_flatten();
 
-        Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
+        Ok(Box::pin(RecordBatchStreamAdapter::new(
+            schema.clone(),
+            stream,
+        )))
+    }
+
+    async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef> {
+        let sql = format!("select * from {table_name} limit 1");
+        let flight_info = self
+            .client
+            .clone()
+            .execute(sql, None)
+            .await
+            .map_err(arrow_error_to_df)?;
+        let schema = flight_info.try_decode_schema().map_err(arrow_error_to_df)?;
+        Ok(Arc::new(schema))
     }
 }
 

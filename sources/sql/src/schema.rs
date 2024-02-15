@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+
 use datafusion::logical_expr::{TableSource, TableType};
 use datafusion::{
     arrow::datatypes::SchemaRef, catalog::schema::SchemaProvider, datasource::TableProvider,
@@ -71,10 +72,11 @@ struct SQLTableSource {
 impl SQLTableSource {
     // creates a SQLTableSource and infers the table schema
     pub async fn new(provider: Arc<SQLFederationProvider>, table_name: String) -> Result<Self> {
-        // Simple schema inference
-        let query = format!("SELECT * FROM {table_name} LIMIT 1");
-        let schema = provider.clone().executor.execute(query.as_str())?.schema();
-
+        let schema = provider
+            .clone()
+            .executor
+            .get_table_schema(table_name.as_str())
+            .await?;
         Self::new_with_schema(provider, table_name, schema)
     }
 
