@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::logical_expr::{JoinConstraint, JoinType, Like};
-use datafusion::sql::sqlparser::ast::JoinOperator;
+use datafusion::sql::sqlparser::ast::{JoinOperator, OrderByExpr};
 use datafusion::{
     error::{DataFusionError, Result},
     scalar::ScalarValue,
@@ -124,8 +124,10 @@ fn select_to_sql(
 
             select_to_sql(limit.input.as_ref(), query, select, relation)
         }
-        LogicalPlan::Sort(_sort) => {
-            not_impl_err!("Unsupported operator: {plan:?}")
+        LogicalPlan::Sort(sort) => {
+            query.order_by(sort_to_sql(sort.expr.clone(), sort.input.schema(), 0)?);
+
+            select_to_sql(sort.input.as_ref(), query, select, relation)
         }
         LogicalPlan::Aggregate(_agg) => {
             not_impl_err!("Unsupported operator: {plan:?}")
@@ -281,6 +283,27 @@ fn expr_to_sql(expr: &Expr, _schema: &DFSchemaRef, _col_ref_offset: usize) -> Re
         }
         _ => not_impl_err!("Unsupported expression: {expr:?}"),
     }
+}
+
+fn sort_to_sql(
+    sort_exprs: Vec<Expr>,
+    _schema: &DFSchemaRef,
+    _col_ref_offset: usize,
+) -> Result<Vec<OrderByExpr>> {
+    sort_exprs
+        .iter()
+        .map(|expr: &Expr| match expr {
+            Expr::Sort(sort_expr) => {
+                let col = expr_to_sql(&sort_expr.expr, _schema, _col_ref_offset)?;
+                Ok(OrderByExpr {
+                    asc: Some(sort_expr.asc),
+                    expr: col,
+                    nulls_first: Some(sort_expr.nulls_first),
+                })
+            }
+            _ => Err(DataFusionError::Plan("Expecting Sort expr".to_string())),
+        })
+        .collect::<Result<Vec<_>>>()
 }
 
 fn op_to_sql(op: &Operator) -> Result<ast::BinaryOperator> {
@@ -509,6 +532,14 @@ mod tests {
             (
                 "select ta.id from table_a ta;",
                 r#"SELECT `ta`.`id` FROM `table_a` AS `ta`"#,
+            ),
+            (
+                "select ta.id from table_a ta order by ta.id;",
+                r#"SELECT `ta`.`id` FROM `table_a` AS `ta` ORDER BY `ta`.`id` ASC NULLS LAST"#,
+            ),
+            (
+                "select * from table_a ta order by ta.id, ta.value desc;",
+                r#"SELECT `ta`.`id`, `ta`.`value` FROM `table_a` AS `ta` ORDER BY `ta`.`id` ASC NULLS LAST, `ta`.`value` DESC NULLS FIRST"#,
             ),
             (
                 "select * from table_a limit 10;",
