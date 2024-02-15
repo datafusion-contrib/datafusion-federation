@@ -289,31 +289,21 @@ fn sort_to_sql(
     sort_exprs: Vec<Expr>,
     _schema: &DFSchemaRef,
     _col_ref_offset: usize,
-) -> Result<Vec<OrderByExpr>, DataFusionError> {
-    let parsed_order_by_exprs = sort_exprs
+) -> Result<Vec<OrderByExpr>> {
+    sort_exprs
         .iter()
         .map(|expr: &Expr| match expr {
             Expr::Sort(sort_expr) => {
                 let col = expr_to_sql(&sort_expr.expr, _schema, _col_ref_offset)?;
                 Ok(OrderByExpr {
                     asc: Some(sort_expr.asc),
-                    expr: col.clone(),
+                    expr: col,
                     nulls_first: Some(sort_expr.nulls_first),
                 })
             }
             _ => Err(DataFusionError::Plan("Expecting Sort expr".to_string())),
         })
-        .collect::<Vec<Result<OrderByExpr, DataFusionError>>>();
-
-    let mut order_by_exprs: Vec<OrderByExpr> = vec![];
-    for oe in parsed_order_by_exprs {
-        match oe {
-            Ok(e) => order_by_exprs.push(e),
-            Err(e) => return Err(e),
-        }
-    }
-
-    Ok(order_by_exprs)
+        .collect::<Result<Vec<_>>>()
 }
 
 fn op_to_sql(op: &Operator) -> Result<ast::BinaryOperator> {
