@@ -1,5 +1,7 @@
-use datafusion::{error::Result, execution::context::SessionState};
-use tonic::Request;
+use datafusion::execution::context::SessionState;
+use tonic::{Request, Status};
+
+type Result<T, E = Status> = std::result::Result<T, E>;
 
 // SessionStateProvider is a trait used to provide a SessionState for a given
 // request.
