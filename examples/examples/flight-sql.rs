@@ -54,7 +54,8 @@ async fn main() -> Result<()> {
     let client = new_client(dsn.clone()).await?;
     let executor = Arc::new(FlightSQLExecutor::new(dsn, client));
     let provider = Arc::new(SQLFederationProvider::new(executor));
-    let schema_provider = Arc::new(SQLSchemaProvider::new(provider, known_tables).await?);
+    let schema_provider =
+        Arc::new(SQLSchemaProvider::new_with_tables(provider, known_tables).await?);
     overwrite_default_schema(&state, schema_provider)?;
 
     // Run query

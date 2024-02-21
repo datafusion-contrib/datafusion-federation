@@ -56,7 +56,7 @@ async fn create_sqlite_provider(
     executor.context(context.to_string());
     let provider = Arc::new(SQLFederationProvider::new(Arc::new(executor)));
     Ok(Arc::new(
-        SQLSchemaProvider::new(provider, known_tables).await?,
+        SQLSchemaProvider::new_with_tables(provider, known_tables).await?,
     ))
 }
 

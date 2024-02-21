@@ -76,6 +76,12 @@ impl SQLExecutor for FlightSQLExecutor {
         )))
     }
 
+    async fn table_names(&self) -> Result<Vec<String>> {
+        Err(DataFusionError::NotImplemented(
+            "flight_sql source: table inference not implemented".to_string(),
+        ))
+    }
+
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef> {
         let sql = format!("select * from {table_name} limit 1");
         let flight_info = self

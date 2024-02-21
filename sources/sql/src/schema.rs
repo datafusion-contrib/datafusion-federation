@@ -20,17 +20,27 @@ pub struct SQLSchemaProvider {
 }
 
 impl SQLSchemaProvider {
-    pub async fn new(provider: Arc<SQLFederationProvider>, tables: Vec<String>) -> Result<Self> {
+    pub async fn new(provider: Arc<SQLFederationProvider>) -> Result<Self> {
+        let tables = provider.clone().executor.table_names().await?;
+
+        Self::new_with_tables(provider, tables).await
+    }
+
+    pub async fn new_with_tables(
+        provider: Arc<SQLFederationProvider>,
+        tables: Vec<String>,
+    ) -> Result<Self> {
         let futures: Vec<_> = tables
             .into_iter()
             .map(|t| SQLTableSource::new(provider.clone(), t))
             .collect();
         let results: Result<Vec<_>> = join_all(futures).await.into_iter().collect();
         let sources = results?.into_iter().map(Arc::new).collect();
-        Ok(Self {
-            // provider,
-            tables: sources,
-        })
+        Ok(Self::new_with_table_sources(sources))
+    }
+
+    pub fn new_with_table_sources(tables: Vec<Arc<SQLTableSource>>) -> Self {
+        Self { tables }
     }
 }
 
@@ -63,7 +73,7 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 }
 
-struct SQLTableSource {
+pub struct SQLTableSource {
     provider: Arc<SQLFederationProvider>,
     table_name: String,
     schema: SchemaRef,

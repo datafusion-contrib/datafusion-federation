@@ -68,6 +68,12 @@ impl SQLExecutor for CXExecutor {
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }
 
+    async fn table_names(&self) -> Result<Vec<String>> {
+        Err(DataFusionError::NotImplemented(
+            "connector_x source: table inference not implemented".to_string(),
+        ))
+    }
+
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef> {
         let conn = self.conn.clone();
         let query: CXQuery = format!("select * from {table_name} limit 1")
