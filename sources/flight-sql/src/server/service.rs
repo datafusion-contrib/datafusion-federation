@@ -24,10 +24,13 @@ use arrow_flight::{
     IpcMessage, SchemaAsIpc, Ticket,
 };
 use datafusion::common::arrow::datatypes::Schema;
+use datafusion::dataframe::DataFrame;
 use datafusion::error::{DataFusionError, Result as DataFusionResult};
 use datafusion::execution::context::{SQLOptions, SessionContext, SessionState};
 use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::SendableRecordBatchStream;
+use datafusion_substrait::logical_plan::consumer::from_substrait_plan;
+use datafusion_substrait::serializer::deserialize_bytes;
 use futures::{Stream, StreamExt, TryStreamExt};
 use log::info;
 use prost::bytes::Bytes;
@@ -176,6 +179,36 @@ impl ArrowFlightSqlService for FlightSqlService {
 
                 Ok(Response::new(flight_data_stream))
             }
+            sql::Command::CommandStatementSubstraitPlan(CommandStatementSubstraitPlan {
+                plan,
+                ..
+            }) => {
+                let substrait_bytes = &plan
+                    .ok_or(Status::invalid_argument(
+                        "Expected substrait plan, found None",
+                    ))?
+                    .plan;
+
+                let plan = parse_substrait_bytes(&ctx, substrait_bytes).await?;
+
+                let state = ctx.inner.state();
+                let df = DataFrame::new(state, plan);
+
+                let stream = df.execute_stream().await.map_err(df_error_to_status)?;
+                let arrow_schema = stream.schema();
+                let arrow_stream = stream.map(|i| {
+                    let batch = i.map_err(|e| FlightError::ExternalError(e.into()))?;
+                    Ok(batch)
+                });
+
+                let flight_data_stream = FlightDataEncoderBuilder::new()
+                    .with_schema(arrow_schema)
+                    .build(arrow_stream)
+                    .map_err(flight_error_to_status)
+                    .boxed();
+
+                Ok(Response::new(flight_data_stream))
+            }
             _ => {
                 return Err(Status::internal(format!(
                     "statement handle not found: {:?}",
@@ -223,15 +256,41 @@ impl ArrowFlightSqlService for FlightSqlService {
 
     async fn get_flight_info_substrait_plan(
         &self,
-        _query: CommandStatementSubstraitPlan,
+        query: CommandStatementSubstraitPlan,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_substrait_plan");
-        let (_, _) = self.new_context(request)?;
+        let (request, ctx) = self.new_context(request)?;
 
-        Err(Status::unimplemented(
-            "Implement get_flight_info_substrait_plan",
-        ))
+        let substrait_bytes = &query
+            .plan
+            .as_ref()
+            .ok_or(Status::invalid_argument(
+                "Expected substrait plan, found None",
+            ))?
+            .plan;
+
+        let plan = parse_substrait_bytes(&ctx, substrait_bytes).await?;
+
+        let flight_descriptor = request.into_inner();
+
+        let dataset_schema = get_schema_for_plan(plan);
+
+        // Form the response ticket (that the client will pass back to DoGet)
+        let ticket = CommandTicket::new(sql::Command::CommandStatementSubstraitPlan(query))
+            .try_encode()
+            .map_err(flight_error_to_status)?;
+
+        let endpoint = FlightEndpoint::new().with_ticket(Ticket { ticket });
+
+        let flight_info = FlightInfo::new()
+            .with_endpoint(endpoint)
+            // return descriptor we were passed
+            .with_descriptor(flight_descriptor)
+            .try_with_schema(dataset_schema.as_ref())
+            .map_err(arrow_error_to_status)?;
+
+        Ok(Response::new(flight_info))
     }
 
     async fn get_flight_info_prepared_statement(
@@ -699,6 +758,21 @@ impl ArrowFlightSqlService for FlightSqlService {
     }
 
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {}
+}
+
+/// Takes a substrait plan serialized as [Bytes] and deserializes this to
+/// a Datafusion [LogicalPlan]
+async fn parse_substrait_bytes(
+    ctx: &FlightSqlSessionContext,
+    substrait: &Bytes,
+) -> Result<LogicalPlan> {
+    let substrait_plan = deserialize_bytes(substrait.to_vec())
+        .await
+        .map_err(df_error_to_status)?;
+
+    from_substrait_plan(&ctx.inner, &substrait_plan)
+        .await
+        .map_err(df_error_to_status)
 }
 
 /// Encodes the schema IPC encoded (schema_bytes)

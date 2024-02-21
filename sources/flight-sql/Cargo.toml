@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [dependencies]
 async-trait.workspace = true
 datafusion.workspace = true
+datafusion-substrait.workspace = true
 datafusion-federation.path = "../../datafusion-federation"
 datafusion-federation-sql.path = "../sql"
 futures = "0.3.30"
