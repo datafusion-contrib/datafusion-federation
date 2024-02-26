@@ -9,9 +9,20 @@ pub type SQLExecutorRef = Arc<dyn SQLExecutor>;
 
 #[async_trait]
 pub trait SQLExecutor: Sync + Send {
+    // Context
+    /// Executor name
     fn name(&self) -> &str;
+    /// Executor compute context allows differentiating the remote compute context
+    /// such as authorization or active database.
     fn compute_context(&self) -> Option<String>;
+
+    // Execution
+    /// Execute a SQL query
     fn execute(&self, query: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream>;
+
+    // Schema inference
+    /// Returns the tables provided by the remote
+    async fn table_names(&self) -> Result<Vec<String>>;
     /// Returns the schema of table_name within this SQLExecutor
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef>;
 }
