@@ -19,5 +19,5 @@ futures = "0.3.30"
 tonic = {version="0.10.2", features=["tls"] }
 prost = "0.12.3"
 arrow = "49.0.0"
-arrow-flight = { version = "49.0.0", features = ["flight-sql-experimental"] }
+arrow-flight = { version = "50.0.0", features = ["flight-sql-experimental"] }
 log = "0.4.20"
