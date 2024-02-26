@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 readme.workspace = true
+description = "Datafusion federation."
 
 [lib]
 name = "datafusion_federation"
@@ -12,3 +13,14 @@ path = "src/lib.rs"
 [dependencies]
 async-trait.workspace = true
 datafusion.workspace = true
+
+[package.metadata.docs.rs]
+
+# Features to pass to Cargo (default: [])
+features = []
+
+# Whether to pass `--all-features` to Cargo (default: false)
+all-features = true
+
+# Whether to pass `--no-default-features` to Cargo (default: false)
+no-default-features = true
