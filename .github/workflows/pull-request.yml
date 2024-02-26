@@ -1,0 +1,30 @@
+name: Pull Request
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+
+jobs:
+  conventional-commits:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm install @commitlint/config-conventional
+      - run: npx commitlint <<< $CONVENTIONAL_COMMIT
+        env:
+          CONVENTIONAL_COMMIT: |
+            ${{ github.event.pull_request.title }}
+
+            ${{ github.event.pull_request.body }}
+      - if: failure()
+        run:
+          echo "Datafusion-federation follows the [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/) for release automation.
+          The PR title and body are used as the merge commit message.
+
+          Please update your PR title to match the specification." >> $GITHUB_STEP_SUMMARY
