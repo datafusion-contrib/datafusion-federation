@@ -16,6 +16,9 @@ pub trait SQLExecutor: Sync + Send {
     /// such as authorization or active database.
     fn compute_context(&self) -> Option<String>;
 
+    // The specific SQL dialect (currently supports 'sqlite', 'postgres', 'flight')
+    fn dialect(&self) -> &str;
+
     // Execution
     /// Execute a SQL query
     fn execute(&self, query: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream>;

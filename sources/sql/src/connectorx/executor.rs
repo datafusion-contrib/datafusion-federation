@@ -84,6 +84,14 @@ impl SQLExecutor for CXExecutor {
         let schema = schema_to_lowercase(dst.arrow_schema());
         Ok(schema)
     }
+
+    fn dialect(&self) -> &str {
+        match &self.conn.ty {
+            SourceType::Postgres => "postgres",
+            SourceType::SQLite => "sqlite",
+            _ => todo!(),
+        }
+    }
 }
 
 fn cx_dst_error_to_df(err: ArrowDestinationError) -> DataFusionError {

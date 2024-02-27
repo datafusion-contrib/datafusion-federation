@@ -168,7 +168,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let ast = query_to_sql(&self.plan)?;
+        let ast = query_to_sql(&self.plan, self.executor.dialect())?;
         let query = format!("{ast}");
 
         self.executor.execute(query.as_str(), self.schema())

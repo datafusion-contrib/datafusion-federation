@@ -93,6 +93,10 @@ impl SQLExecutor for FlightSQLExecutor {
         let schema = flight_info.try_decode_schema().map_err(arrow_error_to_df)?;
         Ok(Arc::new(schema))
     }
+
+    fn dialect(&self) -> &str {
+        "flight"
+    }
 }
 
 fn arrow_error_to_df(err: ArrowError) -> DataFusionError {
