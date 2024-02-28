@@ -76,8 +76,7 @@ pub fn query_to_sql(plan: &LogicalPlan, dialect: &str) -> Result<ast::Statement>
         | LogicalPlan::Ddl(_)
         | LogicalPlan::Copy(_)
         | LogicalPlan::DescribeTable(_)
-        | LogicalPlan::Unnest(_)
-        | LogicalPlan::RecursiveQuery(_) => Err(DataFusionError::NotImplemented(
+        | LogicalPlan::Unnest(_) => Err(DataFusionError::NotImplemented(
             "Unsupported operator: {plan:?}".to_string(),
         )),
     }
