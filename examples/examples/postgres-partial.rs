@@ -47,7 +47,7 @@ async fn create_postgres_provider(
     known_tables: Vec<&str>,
     context: &str,
 ) -> Result<Arc<SQLSchemaProvider>> {
-    let dsn = "postgresql://Suriya:password@localhost:28816/pg_analytics".to_string();
+    let dsn = "postgresql://<username>:<password>@localhost:<port>/<dbname>".to_string();
     let known_tables: Vec<String> = known_tables.iter().map(|&x| x.into()).collect();
     let mut executor = CXExecutor::new(dsn)?;
     executor.context(context.to_string());
