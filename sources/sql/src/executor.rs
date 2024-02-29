@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use core::fmt;
 use datafusion::{
     arrow::datatypes::SchemaRef, error::Result, physical_plan::SendableRecordBatchStream,
+    sql::sqlparser::dialect::Dialect,
 };
 use std::sync::Arc;
 
@@ -17,7 +18,7 @@ pub trait SQLExecutor: Sync + Send {
     fn compute_context(&self) -> Option<String>;
 
     // The specific SQL dialect (currently supports 'sqlite', 'postgres', 'flight')
-    fn dialect(&self) -> &str;
+    fn dialect(&self) -> Arc<dyn Dialect>;
 
     // Execution
     /// Execute a SQL query
