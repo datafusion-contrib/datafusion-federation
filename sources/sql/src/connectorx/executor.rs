@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use connectorx::{
     destinations::arrow::ArrowDestinationError,
     errors::{ConnectorXError, ConnectorXOutError},
-    prelude::{get_arrow, CXQuery, SourceConn},
+    prelude::{get_arrow, CXQuery, SourceConn, SourceType},
 };
 use datafusion::{
     arrow::datatypes::{Field, Schema, SchemaRef},
@@ -10,8 +10,11 @@ use datafusion::{
     physical_plan::{
         stream::RecordBatchStreamAdapter, EmptyRecordBatchStream, SendableRecordBatchStream,
     },
+    sql::sqlparser::dialect::{Dialect, GenericDialect, PostgreSqlDialect, SQLiteDialect},
 };
+use futures::executor::block_on;
 use std::sync::Arc;
+use tokio::task;
 
 use crate::executor::SQLExecutor;
 
@@ -54,7 +57,10 @@ impl SQLExecutor for CXExecutor {
         let conn = self.conn.clone();
         let query: CXQuery = sql.into();
 
-        let mut dst = get_arrow(&conn, None, &[query.clone()]).map_err(cx_out_error_to_df)?;
+        let mut dst = block_on(task::spawn_blocking(move || -> Result<_, _> {
+            get_arrow(&conn, None, &[query.clone()]).map_err(cx_out_error_to_df)
+        }))
+        .map_err(|err| DataFusionError::External(err.to_string().into()))??;
         let stream = if let Some(batch) = dst.record_batch().map_err(cx_dst_error_to_df)? {
             futures::stream::once(async move { Ok(batch) })
         } else {
@@ -83,6 +89,14 @@ impl SQLExecutor for CXExecutor {
         let dst = get_arrow(&conn, None, &[query.clone()]).map_err(cx_out_error_to_df)?;
         let schema = schema_to_lowercase(dst.arrow_schema());
         Ok(schema)
+    }
+
+    fn dialect(&self) -> Arc<dyn Dialect> {
+        match &self.conn.ty {
+            SourceType::Postgres => Arc::new(PostgreSqlDialect {}),
+            SourceType::SQLite => Arc::new(SQLiteDialect {}),
+            _ => Arc::new(GenericDialect {}),
+        }
     }
 }
 

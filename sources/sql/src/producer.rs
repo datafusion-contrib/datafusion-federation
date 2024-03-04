@@ -17,13 +17,16 @@ use datafusion::logical_expr::expr::{
 };
 use datafusion::logical_expr::{Between, LogicalPlan, Operator};
 use datafusion::prelude::Expr;
+use datafusion::sql::sqlparser::dialect::{
+    Dialect, GenericDialect, PostgreSqlDialect, SQLiteDialect,
+};
 
 use crate::ast_builder::{
     BuilderError, QueryBuilder, RelationBuilder, SelectBuilder, TableRelationBuilder,
     TableWithJoinsBuilder,
 };
 
-pub fn query_to_sql(plan: &LogicalPlan) -> Result<ast::Statement> {
+pub fn query_to_sql(plan: &LogicalPlan, dialect: Arc<dyn Dialect>) -> Result<ast::Statement> {
     match plan {
         LogicalPlan::Projection(_)
         | LogicalPlan::Filter(_)
@@ -51,6 +54,7 @@ pub fn query_to_sql(plan: &LogicalPlan) -> Result<ast::Statement> {
                 &mut query_builder,
                 &mut select_builder,
                 &mut relation_builder,
+                dialect,
             )?;
 
             let mut twj = select_builder.pop_from().unwrap();
@@ -86,12 +90,14 @@ fn select_to_sql(
     query: &mut QueryBuilder,
     select: &mut SelectBuilder,
     relation: &mut RelationBuilder,
+    dialect: Arc<dyn Dialect>,
 ) -> Result<()> {
     match plan {
         LogicalPlan::TableScan(scan) => {
             let mut builder = TableRelationBuilder::default();
             builder.name(ast::ObjectName(vec![new_ident(
                 scan.table_name.table().to_string(),
+                dialect,
             )]));
             relation.table(builder);
 
@@ -101,18 +107,25 @@ fn select_to_sql(
             let items = p
                 .expr
                 .iter()
-                .map(|e| select_item_to_sql(e, p.input.schema(), 0).unwrap())
+                .map(|e| select_item_to_sql(e, p.input.schema(), 0, dialect.clone()).unwrap())
                 .collect::<Vec<_>>();
             select.projection(items);
 
-            select_to_sql(p.input.as_ref(), query, select, relation)
+            select_to_sql(p.input.as_ref(), query, select, relation, dialect.clone())
         }
         LogicalPlan::Filter(filter) => {
-            let filter_expr = expr_to_sql(&filter.predicate, filter.input.schema(), 0)?;
+            let filter_expr =
+                expr_to_sql(&filter.predicate, filter.input.schema(), 0, dialect.clone())?;
 
             select.selection(Some(filter_expr));
 
-            select_to_sql(filter.input.as_ref(), query, select, relation)
+            select_to_sql(
+                filter.input.as_ref(),
+                query,
+                select,
+                relation,
+                dialect.clone(),
+            )
         }
         LogicalPlan::Limit(limit) => {
             if let Some(fetch) = limit.fetch {
@@ -122,12 +135,29 @@ fn select_to_sql(
                 ))));
             }
 
-            select_to_sql(limit.input.as_ref(), query, select, relation)
+            select_to_sql(
+                limit.input.as_ref(),
+                query,
+                select,
+                relation,
+                dialect.clone(),
+            )
         }
         LogicalPlan::Sort(sort) => {
-            query.order_by(sort_to_sql(sort.expr.clone(), sort.input.schema(), 0)?);
+            query.order_by(sort_to_sql(
+                sort.expr.clone(),
+                sort.input.schema(),
+                0,
+                dialect.clone(),
+            )?);
 
-            select_to_sql(sort.input.as_ref(), query, select, relation)
+            select_to_sql(
+                sort.input.as_ref(),
+                query,
+                select,
+                relation,
+                dialect.clone(),
+            )
         }
         LogicalPlan::Aggregate(_agg) => {
             not_impl_err!("Unsupported operator: {plan:?}")
@@ -146,14 +176,24 @@ fn select_to_sql(
             // parse filter if exists
             let in_join_schema = join.left.schema().join(join.right.schema())?;
             let join_filter = match &join.filter {
-                Some(filter) => Some(expr_to_sql(filter, &Arc::new(in_join_schema), 0)?),
+                Some(filter) => Some(expr_to_sql(
+                    filter,
+                    &Arc::new(in_join_schema),
+                    0,
+                    dialect.clone(),
+                )?),
                 None => None,
             };
 
             // map join.on to `l.a = r.a AND l.b = r.b AND ...`
             let eq_op = ast::BinaryOperator::Eq;
-            let join_on =
-                join_conditions_to_sql(&join.on, eq_op, join.left.schema(), join.right.schema())?;
+            let join_on = join_conditions_to_sql(
+                &join.on,
+                eq_op,
+                join.left.schema(),
+                join.right.schema(),
+                dialect.clone(),
+            )?;
 
             // Merge `join_on` and `join_filter`
             let join_expr = match (join_filter, join_on) {
@@ -169,8 +209,14 @@ fn select_to_sql(
 
             let mut right_relation = RelationBuilder::default();
 
-            select_to_sql(join.left.as_ref(), query, select, relation)?;
-            select_to_sql(join.right.as_ref(), query, select, &mut right_relation)?;
+            select_to_sql(join.left.as_ref(), query, select, relation, dialect.clone())?;
+            select_to_sql(
+                join.right.as_ref(),
+                query,
+                select,
+                &mut right_relation,
+                dialect.clone(),
+            )?;
 
             let ast_join = ast::Join {
                 relation: right_relation.build().map_err(builder_error_to_df)?,
@@ -184,9 +230,18 @@ fn select_to_sql(
         }
         LogicalPlan::SubqueryAlias(plan_alias) => {
             // Handle bottom-up to allocate relation
-            select_to_sql(plan_alias.input.as_ref(), query, select, relation)?;
+            select_to_sql(
+                plan_alias.input.as_ref(),
+                query,
+                select,
+                relation,
+                dialect.clone(),
+            )?;
 
-            relation.alias(Some(new_table_alias(plan_alias.alias.table().to_string())));
+            relation.alias(Some(new_table_alias(
+                plan_alias.alias.table().to_string(),
+                dialect.clone(),
+            )));
 
             Ok(())
         }
@@ -205,25 +260,31 @@ fn select_item_to_sql(
     expr: &Expr,
     schema: &DFSchemaRef,
     col_ref_offset: usize,
+    dialect: Arc<dyn Dialect>,
 ) -> Result<ast::SelectItem> {
     match expr {
         Expr::Alias(Alias { expr, name, .. }) => {
-            let inner = expr_to_sql(expr, schema, col_ref_offset)?;
+            let inner = expr_to_sql(expr, schema, col_ref_offset, dialect.clone())?;
 
             Ok(ast::SelectItem::ExprWithAlias {
                 expr: inner,
-                alias: new_ident(name.to_string()),
+                alias: new_ident(name.to_string(), dialect.clone()),
             })
         }
         _ => {
-            let inner = expr_to_sql(expr, schema, col_ref_offset)?;
+            let inner = expr_to_sql(expr, schema, col_ref_offset, dialect.clone())?;
 
             Ok(ast::SelectItem::UnnamedExpr(inner))
         }
     }
 }
 
-fn expr_to_sql(expr: &Expr, _schema: &DFSchemaRef, _col_ref_offset: usize) -> Result<SQLExpr> {
+fn expr_to_sql(
+    expr: &Expr,
+    _schema: &DFSchemaRef,
+    _col_ref_offset: usize,
+    dialect: Arc<dyn Dialect>,
+) -> Result<SQLExpr> {
     match expr {
         Expr::InList(InList {
             expr,
@@ -243,10 +304,10 @@ fn expr_to_sql(expr: &Expr, _schema: &DFSchemaRef, _col_ref_offset: usize) -> Re
         }) => {
             not_impl_err!("Unsupported expression: {expr:?}")
         }
-        Expr::Column(col) => col_to_sql(col),
+        Expr::Column(col) => col_to_sql(col, dialect.clone()),
         Expr::BinaryExpr(BinaryExpr { left, op, right }) => {
-            let l = expr_to_sql(left.as_ref(), _schema, 0)?;
-            let r = expr_to_sql(right.as_ref(), _schema, 0)?;
+            let l = expr_to_sql(left.as_ref(), _schema, 0, dialect.clone())?;
+            let r = expr_to_sql(right.as_ref(), _schema, 0, dialect.clone())?;
             let op = op_to_sql(op)?;
 
             Ok(binary_op_to_sql(l, r, op))
@@ -262,7 +323,9 @@ fn expr_to_sql(expr: &Expr, _schema: &DFSchemaRef, _col_ref_offset: usize) -> Re
             not_impl_err!("Unsupported expression: {expr:?}")
         }
         Expr::Literal(value) => Ok(ast::Expr::Value(scalar_to_sql(value)?)),
-        Expr::Alias(Alias { expr, name: _, .. }) => expr_to_sql(expr, _schema, _col_ref_offset),
+        Expr::Alias(Alias { expr, name: _, .. }) => {
+            expr_to_sql(expr, _schema, _col_ref_offset, dialect.clone())
+        }
         Expr::WindowFunction(WindowFunction {
             fun: _,
             args: _,
@@ -289,12 +352,13 @@ fn sort_to_sql(
     sort_exprs: Vec<Expr>,
     _schema: &DFSchemaRef,
     _col_ref_offset: usize,
+    dialect: Arc<dyn Dialect>,
 ) -> Result<Vec<OrderByExpr>> {
     sort_exprs
         .iter()
         .map(|expr: &Expr| match expr {
             Expr::Sort(sort_expr) => {
-                let col = expr_to_sql(&sort_expr.expr, _schema, _col_ref_offset)?;
+                let col = expr_to_sql(&sort_expr.expr, _schema, _col_ref_offset, dialect.clone())?;
                 Ok(OrderByExpr {
                     asc: Some(sort_expr.asc),
                     expr: col,
@@ -425,14 +489,14 @@ fn scalar_to_sql(v: &ScalarValue) -> Result<ast::Value> {
     }
 }
 
-fn col_to_sql(col: &Column) -> Result<ast::Expr> {
+fn col_to_sql(col: &Column, dialect: Arc<dyn Dialect>) -> Result<ast::Expr> {
     Ok(ast::Expr::CompoundIdentifier(
         [
             col.relation.as_ref().unwrap().table().to_string(),
             col.name.to_string(),
         ]
         .iter()
-        .map(|i| new_ident(i.to_string()))
+        .map(|i| new_ident(i.to_string(), dialect.clone()))
         .collect(),
     ))
 }
@@ -455,17 +519,19 @@ fn join_conditions_to_sql(
     eq_op: ast::BinaryOperator,
     left_schema: &DFSchemaRef,
     right_schema: &DFSchemaRef,
+    dialect: Arc<dyn Dialect>,
 ) -> Result<Option<SQLExpr>> {
     // Only support AND conjunction for each binary expression in join conditions
     let mut exprs: Vec<SQLExpr> = vec![];
     for (left, right) in join_conditions {
         // Parse left
-        let l = expr_to_sql(left, left_schema, 0)?;
+        let l = expr_to_sql(left, left_schema, 0, dialect.clone())?;
         // Parse right
         let r = expr_to_sql(
             right,
             right_schema,
             left_schema.fields().len(), // offset to return the correct index
+            dialect.clone(),
         )?;
         // AND with existing expression
         exprs.push(binary_op_to_sql(l, r, eq_op.clone()));
@@ -486,17 +552,23 @@ pub fn binary_op_to_sql(lhs: SQLExpr, rhs: SQLExpr, op: ast::BinaryOperator) -> 
     }
 }
 
-fn new_table_alias(alias: String) -> ast::TableAlias {
+fn new_table_alias(alias: String, dialect: Arc<dyn Dialect>) -> ast::TableAlias {
     ast::TableAlias {
-        name: new_ident(alias),
+        name: new_ident(alias, dialect.clone()),
         columns: Vec::new(),
     }
 }
 
-fn new_ident(str: String) -> ast::Ident {
+fn new_ident(str: String, dialect: Arc<dyn Dialect>) -> ast::Ident {
     ast::Ident {
         value: str,
-        quote_style: Some('`'),
+        quote_style: if dialect.is::<PostgreSqlDialect>() {
+            Some('"')
+        } else if dialect.is::<SQLiteDialect>() || dialect.is::<GenericDialect>() {
+            Some('`')
+        } else {
+            todo!()
+        },
     }
 }
 

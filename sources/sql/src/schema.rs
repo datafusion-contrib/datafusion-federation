@@ -73,6 +73,40 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 }
 
+pub struct MultiSchemaProvider {
+    children: Vec<Arc<dyn SchemaProvider>>,
+}
+
+impl MultiSchemaProvider {
+    pub fn new(children: Vec<Arc<dyn SchemaProvider>>) -> Self {
+        Self { children }
+    }
+}
+
+#[async_trait]
+impl SchemaProvider for MultiSchemaProvider {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn table_names(&self) -> Vec<String> {
+        self.children.iter().flat_map(|p| p.table_names()).collect()
+    }
+
+    async fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
+        for child in &self.children {
+            if let Some(table) = child.table(name).await {
+                return Some(table);
+            }
+        }
+        None
+    }
+
+    fn table_exist(&self, name: &str) -> bool {
+        self.children.iter().any(|p| p.table_exist(name))
+    }
+}
+
 pub struct SQLTableSource {
     provider: Arc<SQLFederationProvider>,
     table_name: String,

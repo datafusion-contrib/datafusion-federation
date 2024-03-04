@@ -16,5 +16,9 @@ datafusion-federation-flight-sql.path = "../sources/flight-sql"
 connectorx = { git = "https://github.com/sfu-db/connector-x.git", rev = "fa0fc7bc", features = [
     "dst_arrow",
     "src_sqlite",
+    "src_postgres",
 ] }
 tonic = "0.10.2"
+
+[dependencies]
+async-std = "1.12.0"

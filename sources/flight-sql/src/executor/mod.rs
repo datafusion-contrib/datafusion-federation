@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use datafusion::{
     error::{DataFusionError, Result},
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
+    sql::sqlparser::dialect::{Dialect, GenericDialect},
 };
 use datafusion_federation_sql::SQLExecutor;
 use futures::TryStreamExt;
@@ -92,6 +93,10 @@ impl SQLExecutor for FlightSQLExecutor {
             .map_err(arrow_error_to_df)?;
         let schema = flight_info.try_decode_schema().map_err(arrow_error_to_df)?;
         Ok(Arc::new(schema))
+    }
+
+    fn dialect(&self) -> Arc<dyn Dialect> {
+        Arc::new(GenericDialect {})
     }
 }
 
