@@ -18,6 +18,7 @@ connectorx = { git = "https://github.com/sfu-db/connector-x.git", rev = "fa0fc7b
 ] }
 datafusion.workspace = true
 datafusion-federation.path = "../../datafusion-federation"
+datafusion-sql-writer.path = "../../sql-writer"
 # derive_builder = "0.13.0"
 futures = "0.3.30"
 tokio = "1.35.1"

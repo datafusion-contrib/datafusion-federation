@@ -15,6 +15,7 @@ use datafusion::{
 use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
 
 mod schema;
+use datafusion_sql_writer::from_df_plan;
 pub use schema::*;
 
 pub mod connectorx;
@@ -23,11 +24,6 @@ pub use executor::*;
 
 // #[macro_use]
 // extern crate derive_builder;
-
-mod producer;
-use producer::query_to_sql;
-
-mod ast_builder;
 
 // SQLFederationProvider provides federation to SQL DMBSs.
 pub struct SQLFederationProvider {
@@ -168,7 +164,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let ast = query_to_sql(&self.plan, self.executor.dialect())?;
+        let ast = from_df_plan(&self.plan, self.executor.dialect())?;
         let query = format!("{ast}");
 
         self.executor.execute(query.as_str(), self.schema())
