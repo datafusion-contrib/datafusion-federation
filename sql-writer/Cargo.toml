@@ -1,0 +1,17 @@
+[package]
+name = "datafusion-sql-writer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[lib]
+name = "datafusion_sql_writer"
+path = "src/lib.rs"
+
+[dependencies]
+datafusion.workspace = true
+# derive_builder = "0.13.0"
+
+[dev-dependencies]
+tokio = "1.35.1"

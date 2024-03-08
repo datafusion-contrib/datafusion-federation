@@ -8,7 +8,7 @@ use datafusion::{
     sql::sqlparser::ast::{self, Expr as SQLExpr},
 };
 
-use datafusion::common::not_impl_err;
+use datafusion::common::{not_impl_err, DFSchema};
 use datafusion::common::{Column, DFSchemaRef};
 #[allow(unused_imports)]
 use datafusion::logical_expr::aggregate_function;
@@ -21,12 +21,22 @@ use datafusion::sql::sqlparser::dialect::{
     Dialect, GenericDialect, PostgreSqlDialect, SQLiteDialect,
 };
 
+mod ast_builder;
 use crate::ast_builder::{
     BuilderError, QueryBuilder, RelationBuilder, SelectBuilder, TableRelationBuilder,
     TableWithJoinsBuilder,
 };
 
-pub fn query_to_sql(plan: &LogicalPlan, dialect: Arc<dyn Dialect>) -> Result<ast::Statement> {
+pub fn from_df_plan(plan: &LogicalPlan, dialect: Arc<dyn Dialect>) -> Result<ast::Statement> {
+    query_to_sql(plan, dialect)
+}
+
+pub fn from_df_expr(expr: &Expr, dialect: Arc<dyn Dialect>) -> Result<SQLExpr> {
+    let schema = DFSchema::empty();
+    expr_to_sql(expr, &Arc::new(schema), 0, dialect)
+}
+
+fn query_to_sql(plan: &LogicalPlan, dialect: Arc<dyn Dialect>) -> Result<ast::Statement> {
     match plan {
         LogicalPlan::Projection(_)
         | LogicalPlan::Filter(_)

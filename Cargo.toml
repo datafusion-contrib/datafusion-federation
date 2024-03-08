@@ -6,6 +6,7 @@ members = [
     "examples",
     "sources/sql",
     "sources/flight-sql",
+    "sql-writer",
 ]
 
 [patch.crates-io]
