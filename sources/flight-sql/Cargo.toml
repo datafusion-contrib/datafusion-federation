@@ -16,7 +16,7 @@ datafusion-substrait.workspace = true
 datafusion-federation.path = "../../datafusion-federation"
 datafusion-federation-sql.path = "../sql"
 futures = "0.3.30"
-tonic = {version="0.10.2", features=["tls"] }
+tonic = {version="0.11.0", features=["tls"] }
 prost = "0.12.3"
 arrow = "49.0.0"
 arrow-flight = { version = "49.0.0", features = ["flight-sql-experimental"] }
