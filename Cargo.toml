@@ -22,5 +22,5 @@ readme = "README.md"
 
 [workspace.dependencies]
 async-trait = "0.1.77"
-datafusion = "34.0.0"
+datafusion = "36.0.0"
 datafusion-substrait = "34.0.0"
