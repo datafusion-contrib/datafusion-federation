@@ -105,10 +105,19 @@ fn select_to_sql(
     match plan {
         LogicalPlan::TableScan(scan) => {
             let mut builder = TableRelationBuilder::default();
-            builder.name(ast::ObjectName(vec![new_ident(
+            let mut table_parts = vec![];
+            if let Some(schema_name) = scan.table_name.schema() {
+                table_parts.push(new_ident(
+                    schema_name.to_string(),
+                    dialect,
+                ));
+            }
+            table_parts.push(new_ident(
                 scan.table_name.table().to_string(),
                 dialect,
-            )]));
+            ));
+
+            builder.name(ast::ObjectName(table_parts));
             relation.table(builder);
 
             Ok(())
