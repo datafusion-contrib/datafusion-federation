@@ -109,12 +109,12 @@ fn select_to_sql(
             if let Some(schema_name) = scan.table_name.schema() {
                 table_parts.push(new_ident(
                     schema_name.to_string(),
-                    dialect,
+                    dialect.clone(),
                 ));
             }
             table_parts.push(new_ident(
                 scan.table_name.table().to_string(),
-                dialect,
+                dialect.clone(),
             ));
 
             builder.name(ast::ObjectName(table_parts));
