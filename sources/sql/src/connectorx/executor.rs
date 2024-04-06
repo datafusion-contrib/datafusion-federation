@@ -53,7 +53,7 @@ impl SQLExecutor for CXExecutor {
     fn compute_context(&self) -> Option<String> {
         Some(self.context.clone())
     }
-    fn execute(&self, sql: &str, _schema: SchemaRef) -> Result<SendableRecordBatchStream> {
+    fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
         let conn = self.conn.clone();
         let query: CXQuery = sql.into();
 
@@ -68,8 +68,6 @@ impl SQLExecutor for CXExecutor {
                 Schema::empty(),
             ))));
         };
-
-        let schema = schema_to_lowercase(dst.arrow_schema());
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(schema, stream)))
     }

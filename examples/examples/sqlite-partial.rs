@@ -92,13 +92,13 @@ impl SchemaProvider for MultiSchemaProvider {
         self.children.iter().flat_map(|p| p.table_names()).collect()
     }
 
-    async fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
+    async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
         for child in &self.children {
-            if let Some(table) = child.table(name).await {
-                return Some(table);
+            if let Ok(Some(table)) = child.table(name).await {
+                return Ok(Some(table));
             }
         }
-        None
+        Ok(None)
     }
 
     fn table_exist(&self, name: &str) -> bool {

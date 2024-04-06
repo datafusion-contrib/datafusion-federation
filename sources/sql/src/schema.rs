@@ -54,16 +54,16 @@ impl SchemaProvider for SQLSchemaProvider {
         self.tables.iter().map(|s| s.table_name.clone()).collect()
     }
 
-    async fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
+    async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
         if let Some(source) = self
             .tables
             .iter()
             .find(|s| s.table_name.eq_ignore_ascii_case(name))
         {
             let adaptor = FederatedTableProviderAdaptor::new(source.clone());
-            return Some(Arc::new(adaptor));
+            return Ok(Some(Arc::new(adaptor)));
         }
-        None
+        Ok(None)
     }
 
     fn table_exist(&self, name: &str) -> bool {
@@ -93,13 +93,13 @@ impl SchemaProvider for MultiSchemaProvider {
         self.children.iter().flat_map(|p| p.table_names()).collect()
     }
 
-    async fn table(&self, name: &str) -> Option<Arc<dyn TableProvider>> {
+    async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
         for child in &self.children {
-            if let Some(table) = child.table(name).await {
-                return Some(table);
+            if let Ok(Some(table)) = child.table(name).await {
+                return Ok(Some(table));
             }
         }
-        None
+        Ok(None)
     }
 
     fn table_exist(&self, name: &str) -> bool {

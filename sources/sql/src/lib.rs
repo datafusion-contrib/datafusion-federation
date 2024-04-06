@@ -9,13 +9,16 @@ use datafusion::{
     execution::{context::SessionState, TaskContext},
     logical_expr::{Extension, LogicalPlan},
     optimizer::analyzer::{Analyzer, AnalyzerRule},
-    physical_expr::PhysicalSortExpr,
-    physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, SendableRecordBatchStream},
+    physical_expr::EquivalenceProperties,
+    physical_plan::{
+        DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+        SendableRecordBatchStream,
+    },
+    sql::unparser::plan_to_sql,
 };
 use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
 
 mod schema;
-use datafusion_sql_writer::from_df_plan;
 pub use schema::*;
 
 pub mod connectorx;
@@ -112,11 +115,22 @@ impl FederationPlanner for SQLFederationPlanner {
 struct VirtualExecutionPlan {
     plan: LogicalPlan,
     executor: Arc<dyn SQLExecutor>,
+    props: PlanProperties,
 }
 
 impl VirtualExecutionPlan {
     pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>) -> Self {
-        Self { plan, executor }
+        let schema: Schema = plan.schema().as_ref().into();
+        let props = PlanProperties::new(
+            EquivalenceProperties::new(Arc::new(schema)),
+            Partitioning::UnknownPartitioning(1),
+            ExecutionMode::Bounded,
+        );
+        Self {
+            plan,
+            executor,
+            props,
+        }
     }
 
     fn schema(&self) -> SchemaRef {
@@ -140,14 +154,6 @@ impl ExecutionPlan for VirtualExecutionPlan {
         self.schema()
     }
 
-    fn output_partitioning(&self) -> datafusion::physical_plan::Partitioning {
-        datafusion::physical_plan::Partitioning::UnknownPartitioning(1)
-    }
-
-    fn output_ordering(&self) -> Option<&[PhysicalSortExpr]> {
-        None
-    }
-
     fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
         vec![]
     }
@@ -164,9 +170,13 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let ast = from_df_plan(&self.plan, self.executor.dialect())?;
+        let ast = plan_to_sql(&self.plan)?;
         let query = format!("{ast}");
 
         self.executor.execute(query.as_str(), self.schema())
+    }
+
+    fn properties(&self) -> &PlanProperties {
+        &self.props
     }
 }
