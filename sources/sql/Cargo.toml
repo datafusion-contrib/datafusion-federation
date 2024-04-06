@@ -13,12 +13,12 @@ path = "src/lib.rs"
 async-trait.workspace = true
 # connectorx = { version = "0.3.2", features = ["src_sqlite"] }
 # https://github.com/sfu-db/connector-x/pull/555
-connectorx = { git = "https://github.com/sfu-db/connector-x.git", rev = "fa0fc7bc", features = [
+connectorx = { git = "https://github.com/devinjdangelo/connector-x.git", features = [
     "dst_arrow",
+    "src_sqlite"
 ] }
 datafusion.workspace = true
 datafusion-federation.path = "../../datafusion-federation"
-datafusion-sql-writer.path = "../../sql-writer"
 # derive_builder = "0.13.0"
 futures = "0.3.30"
 tokio = "1.35.1"

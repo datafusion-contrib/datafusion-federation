@@ -113,7 +113,7 @@ impl FederationAnalyzerRule {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let new_plan = plan.with_new_inputs(&new_inputs)?;
+        let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
 
         Ok((Some(new_plan), None))
     }
