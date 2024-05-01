@@ -49,6 +49,7 @@ impl FederationAnalyzerRule {
         // Check if this node determines the FederationProvider
         let sole_provider = self.get_federation_provider(plan)?;
         if sole_provider.is_some() {
+            log::debug!("sole_provider: {:?}", plan);
             return Ok((None, sole_provider));
         }
 
@@ -64,6 +65,8 @@ impl FederationAnalyzerRule {
             .collect::<Result<Vec<_>>>()?
             .into_iter()
             .unzip();
+
+        log::debug!("new_inputs: {:?}", new_inputs);
 
         // Note: assumes provider is None if ambiguous
         let first_provider = providers.first().unwrap();
@@ -87,11 +90,13 @@ impl FederationAnalyzerRule {
 
         // The plan is ambiguous, any inputs that are not federated and
         // have a sole provider, should be federated.
+        // TODO: need to check expressions for federation as well.
         let new_inputs = new_inputs
             .into_iter()
             .enumerate()
             .map(|(i, new_sub_plan)| {
                 if let Some(sub_plan) = new_sub_plan {
+                    log::debug!("already federated sub_plan: {:?}", sub_plan);
                     // Already federated
                     return Ok(sub_plan);
                 }
@@ -103,16 +108,20 @@ impl FederationAnalyzerRule {
 
                         let optimized =
                             optimizer.execute_and_check(&wrapped, _config, |_, _| {})?;
+                        log::debug!("optimized plan: {:?}", optimized);
                         return Ok(optimized);
                     }
                     // No federation for this sub-plan (no analyzer)
+                    log::debug!("no federation 1: {:?}", sub_plan);
                     return Ok((*sub_plan).clone());
                 }
                 // No federation for this sub-plan (no provider)
+                log::debug!("no federation 2: {:?}", sub_plan);
                 Ok((*sub_plan).clone())
             })
             .collect::<Result<Vec<_>>>()?;
 
+        log::debug!("new plan new inputs: {:?}", new_inputs);
         let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
 
         Ok((Some(new_plan), None))
