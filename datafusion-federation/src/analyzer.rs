@@ -139,12 +139,6 @@ impl FederationAnalyzerRule {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        /*
-            NOTES: the subquery is turned into a set of expressions.
-            We then will need to recursively parse these expressions and feed any subquery logicalplans back into
-            optimize_recursively in order to update the expressions.
-        */
-
         let new_plan = plan.with_new_exprs(new_expressions, new_inputs)?;
 
         Ok((Some(new_plan), None))
