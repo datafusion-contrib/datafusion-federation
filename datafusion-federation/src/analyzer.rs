@@ -62,7 +62,7 @@ impl FederationAnalyzerRule {
 
         // Optimize expressions
         let mut new_expressions = vec![];
-        let mut optimize_exprs = |expr: Expr| {
+        let optimize_exprs = |expr: Expr| {
             if let Expr::ScalarSubquery(ref subquery) = expr {
                 let (new_subquery, _) =
                     self.optimize_recursively(&subquery.subquery, parent, _config)?;
@@ -79,7 +79,7 @@ impl FederationAnalyzerRule {
         };
 
         for expr in &expressions {
-            let transformed = expr.clone().transform(&mut optimize_exprs);
+            let transformed = expr.clone().transform(&optimize_exprs);
             new_expressions.push(transformed.unwrap().data);
         }
 
