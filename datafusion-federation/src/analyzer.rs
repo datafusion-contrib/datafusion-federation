@@ -173,8 +173,10 @@ impl FederationAnalyzerRule {
         */
 
         log::debug!("new plan new inputs: {:?}", new_inputs);
+        log::debug!("old plan: {:?}", plan);
         let new_plan = plan.with_new_exprs(new_expressions, new_inputs)?;
         // let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
+        log::debug!("new plan: {:?}", new_plan);
 
         Ok((Some(new_plan), None))
     }
