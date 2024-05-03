@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
+use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
 use datafusion::{
     config::ConfigOptions,
     datasource::source_as_provider,
     error::{DataFusionError, Result},
-    logical_expr::{Expr, LogicalPlan, Projection, Subquery, TableScan, TableSource},
+    logical_expr::{Expr, LogicalPlan, Projection, TableScan, TableSource},
     optimizer::analyzer::AnalyzerRule,
 };
-use datafusion::common::tree_node::TreeNodeRecursion;
-use datafusion::common::tree_node::TreeNode;
-use datafusion::common::tree_node::Transformed;
 
 use crate::{FederatedTableProviderAdaptor, FederatedTableSource, FederationProviderRef};
 
@@ -34,16 +32,6 @@ impl AnalyzerRule for FederationAnalyzerRule {
     }
 }
 
-// fn optimize_expr_recursively(
-//         expr: &Expr,
-// ) -> Result<TreeNodeRecursion, DataFusionErrors> {
-//     match expr {
-//         Expr::ScalarSubquery(subquery) => {
-//             *subquery.subquery = 
-//         }
-//     }
-// }
-
 impl FederationAnalyzerRule {
     pub fn new() -> Self {
         Self::default()
@@ -59,39 +47,35 @@ impl FederationAnalyzerRule {
         parent: Option<&LogicalPlan>,
         _config: &ConfigOptions,
     ) -> Result<(Option<LogicalPlan>, Option<FederationProviderRef>)> {
-        log::debug!("optimize_recursively: {:?}, {:?}", plan, parent);
         // Check if this node determines the FederationProvider
         let sole_provider = self.get_federation_provider(plan)?;
         if sole_provider.is_some() {
-            log::debug!("sole_provider: {:?}", plan);
             return Ok((None, sole_provider));
         }
-
-        log::debug!("inputs: {:?} expressions: {:?}", plan.inputs(), plan.expressions());
 
         // optimize_inputs
         let inputs = plan.inputs();
         let expressions = plan.expressions();
         if inputs.is_empty() && expressions.is_empty() {
-            log::debug!("both empty??");
             return Ok((None, None));
         }
 
+        // Optimize expressions
         let mut new_expressions = vec![];
-
         let mut optimize_exprs = |expr: Expr| {
-            Ok(if let Expr::ScalarSubquery(ref subquery) = expr {
-                if let Some(new_subquery) = self.optimize_recursively(&subquery.subquery, parent, _config)?.0 {
-                    log::debug!("optimizing expression: {:?} \n to \n {:?}", subquery.subquery, new_subquery);
-                    // new_expressions.push(Expr::ScalarSubquery(subquery.with_plan(new_subquery.into())));
-                    // subquery = &subquery.with_plan(new_subquery.into());
-                    Transformed::new(Expr::ScalarSubquery(subquery.with_plan(new_subquery.into())), true, TreeNodeRecursion::Continue)
-                } else {
-                    Transformed::new(expr, false, TreeNodeRecursion::Continue)
+            if let Expr::ScalarSubquery(ref subquery) = expr {
+                let (new_subquery, _) =
+                    self.optimize_recursively(&subquery.subquery, parent, _config)?;
+                if let Some(new_subquery) = new_subquery {
+                    return Ok(Transformed::new(
+                        Expr::ScalarSubquery(subquery.with_plan(new_subquery.into())),
+                        true,
+                        TreeNodeRecursion::Continue,
+                    ));
                 }
-            } else {
-                Transformed::new(expr, false, TreeNodeRecursion::Continue)
-            })
+            }
+
+            Ok(Transformed::new(expr, false, TreeNodeRecursion::Continue))
         };
 
         for expr in &expressions {
@@ -99,84 +83,69 @@ impl FederationAnalyzerRule {
             new_expressions.push(transformed.unwrap().data);
         }
 
-        log::debug!("new_expressions: {:?} \n from expressions {:?}", new_expressions, expressions);
+        // Optimize inputs
+        let (new_inputs, providers): (Vec<_>, Vec<_>) = inputs
+            .iter()
+            .map(|i| self.optimize_recursively(i, Some(plan), _config))
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .unzip();
 
+        // Note: assumes provider is None if ambiguous
+        let first_provider = providers.first().unwrap();
+        let is_singular = providers.iter().all(|p| p.is_some() && p == first_provider);
 
-        // TODO: need to check subqueries as well
-        // let new_inputs = if !inputs.is_empty() {
-            let (new_inputs, providers): (Vec<_>, Vec<_>) = inputs
-                .iter()
-                .map(|i| self.optimize_recursively(i, Some(plan), _config))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .unzip();
-
-            log::debug!("new_inputs: {:?}", new_inputs);
-
-            // Note: assumes provider is None if ambiguous
-            let first_provider = providers.first().unwrap();
-            let is_singular = providers.iter().all(|p| p.is_some() && p == first_provider);
-
-            if is_singular {
-                if parent.is_none() {
-                    // federate the entire plan
-                    if let Some(provider) = first_provider {
-                        if let Some(optimizer) = provider.analyzer() {
-                            let optimized = optimizer.execute_and_check(plan, _config, |_, _| {})?;
-                            return Ok((Some(optimized), None));
-                        }
-                        return Ok((None, None));
+        if is_singular {
+            if parent.is_none() {
+                // federate the entire plan
+                if let Some(provider) = first_provider {
+                    if let Some(optimizer) = provider.analyzer() {
+                        let optimized = optimizer.execute_and_check(plan, _config, |_, _| {})?;
+                        return Ok((Some(optimized), None));
                     }
                     return Ok((None, None));
                 }
-                // The largest sub-plan is higher up.
-                return Ok((None, first_provider.clone()));
+                return Ok((None, None));
             }
+            // The largest sub-plan is higher up.
+            return Ok((None, first_provider.clone()));
+        }
 
-            // The plan is ambiguous, any inputs that are not federated and
-            // have a sole provider, should be federated.
-            // TODO: need to check expressions for federation as well.
-            let new_inputs = new_inputs
-                .into_iter()
-                .enumerate()
-                .map(|(i, new_sub_plan)| {
-                    if let Some(sub_plan) = new_sub_plan {
-                        log::debug!("already federated sub_plan: {:?}", sub_plan);
-                        // Already federated
-                        return Ok(sub_plan);
-                    }
-                    let sub_plan = inputs.get(i).unwrap();
-                    // Check if the input has a sole provider and can be federated.
-                    if let Some(provider) = providers.get(i).unwrap() {
-                        if let Some(optimizer) = provider.analyzer() {
-                            let wrapped = wrap_projection((*sub_plan).clone())?;
+        // The plan is ambiguous, any inputs that are not federated and
+        // have a sole provider, should be federated.
+        let new_inputs = new_inputs
+            .into_iter()
+            .enumerate()
+            .map(|(i, new_sub_plan)| {
+                if let Some(sub_plan) = new_sub_plan {
+                    // Already federated
+                    return Ok(sub_plan);
+                }
+                let sub_plan = inputs.get(i).unwrap();
+                // Check if the input has a sole provider and can be federated.
+                if let Some(provider) = providers.get(i).unwrap() {
+                    if let Some(optimizer) = provider.analyzer() {
+                        let wrapped = wrap_projection((*sub_plan).clone())?;
 
-                            let optimized =
-                                optimizer.execute_and_check(&wrapped, _config, |_, _| {})?;
-                            log::debug!("optimized plan: {:?}", optimized);
-                            return Ok(optimized);
-                        }
-                        // No federation for this sub-plan (no analyzer)
-                        log::debug!("no federation 1: {:?}", sub_plan);
-                        return Ok((*sub_plan).clone());
+                        let optimized =
+                            optimizer.execute_and_check(&wrapped, _config, |_, _| {})?;
+                        return Ok(optimized);
                     }
-                    // No federation for this sub-plan (no provider)
-                    log::debug!("no federation 2: {:?}", sub_plan);
-                    Ok((*sub_plan).clone())
-                })
-                .collect::<Result<Vec<_>>>()?;
+                    // No federation for this sub-plan (no analyzer)
+                    return Ok((*sub_plan).clone());
+                }
+                // No federation for this sub-plan (no provider)
+                Ok((*sub_plan).clone())
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         /*
-            NOTES: the subquery is turned into a set of expressions. 
+            NOTES: the subquery is turned into a set of expressions.
             We then will need to recursively parse these expressions and feed any subquery logicalplans back into
             optimize_recursively in order to update the expressions.
         */
 
-        log::debug!("new plan new inputs: {:?}", new_inputs);
-        log::debug!("old plan: {:?}", plan);
         let new_plan = plan.with_new_exprs(new_expressions, new_inputs)?;
-        // let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
-        log::debug!("new plan: {:?}", new_plan);
 
         Ok((Some(new_plan), None))
     }
