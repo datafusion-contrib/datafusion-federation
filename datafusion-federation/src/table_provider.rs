@@ -55,7 +55,6 @@ impl TableProvider for FederatedTableProviderAdaptor {
         _filters: &[Expr],
         _limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        // log::debug!("scan source: {:?}", self.source);
         Err(DataFusionError::NotImplemented(
             "FederatedTableProviderAdaptor cannot scan".to_string(),
         ))
