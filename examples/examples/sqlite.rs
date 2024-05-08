@@ -44,8 +44,17 @@ async fn main() -> datafusion::error::Result<()> {
          JOIN Artist ar ON a.ArtistId = ar.ArtistId
          limit 10"#;
     let df = ctx.sql(query).await?;
+    df.show().await?;
 
-    df.show().await
+    // If the environment variable EXPLAIN is set, print the query plan
+    if std::env::var("EXPLAIN").is_ok() {
+        let explain_query = format!("EXPLAIN {query}");
+        let df = ctx.sql(explain_query.as_str()).await?;
+
+        df.show().await?;
+    }
+
+    Ok(())
 }
 
 fn overwrite_default_schema(state: &SessionState, schema: Arc<dyn SchemaProvider>) -> Result<()> {
