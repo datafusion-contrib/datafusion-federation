@@ -54,7 +54,7 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
     }
 
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Federated")
+        write!(f, "Federated\n {:?}", self.plan)
     }
 
     fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
