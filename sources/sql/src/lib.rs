@@ -141,13 +141,13 @@ impl VirtualExecutionPlan {
 
 impl DisplayAs for VirtualExecutionPlan {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> std::fmt::Result {
-        write!(f, "VirtualExecutionPlan");
+        write!(f, "VirtualExecutionPlan")?;
         let Ok(ast) = plan_to_sql(&self.plan) else {
             return Ok(());
         };
-        write!(f, " name={}", self.executor.name());
+        write!(f, " name={}", self.executor.name())?;
         if let Some(ctx) = self.executor.compute_context() {
-            write!(f, " compute_context={ctx}");
+            write!(f, " compute_context={ctx}")?;
         }
         write!(f, " sql={ast}")
     }
