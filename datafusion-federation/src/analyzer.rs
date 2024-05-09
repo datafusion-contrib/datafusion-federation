@@ -3,7 +3,7 @@ use std::sync::Arc;
 use datafusion::{
     config::ConfigOptions,
     datasource::source_as_provider,
-    error::{DataFusionError, Result},
+    error::Result,
     logical_expr::{Expr, LogicalPlan, Projection, TableScan, TableSource},
     optimizer::analyzer::AnalyzerRule,
 };
@@ -121,7 +121,9 @@ impl FederationAnalyzerRule {
     fn get_federation_provider(&self, plan: &LogicalPlan) -> Result<Option<FederationProviderRef>> {
         match plan {
             LogicalPlan::TableScan(TableScan { ref source, .. }) => {
-                let federated_source = get_table_source(source.clone())?;
+                let Some(federated_source) = get_table_source(source)? else {
+                    return Ok(None);
+                };
                 let provider = federated_source.federation_provider();
                 Ok(Some(provider))
             }
@@ -149,18 +151,20 @@ fn wrap_projection(plan: LogicalPlan) -> Result<LogicalPlan> {
     }
 }
 
-pub fn get_table_source(source: Arc<dyn TableSource>) -> Result<Arc<dyn FederatedTableSource>> {
+pub fn get_table_source(
+    source: &Arc<dyn TableSource>,
+) -> Result<Option<Arc<dyn FederatedTableSource>>> {
     // Unwrap TableSource
-    let source = source_as_provider(&source)?;
+    let source = source_as_provider(source)?;
 
     // Get FederatedTableProviderAdaptor
-    let wrapper = source
+    let Some(wrapper) = source
         .as_any()
         .downcast_ref::<FederatedTableProviderAdaptor>()
-        .ok_or(DataFusionError::Plan(
-            "expected a FederatedTableSourceWrapper".to_string(),
-        ))?;
+    else {
+        return Ok(None);
+    };
 
     // Return original FederatedTableSource
-    Ok(wrapper.source.clone())
+    Ok(Some(Arc::clone(&wrapper.source)))
 }
