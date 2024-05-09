@@ -68,11 +68,11 @@ impl SQLExecutor for FlightSQLExecutor {
     }
     fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
         let future_stream =
-            make_flight_sql_stream(sql.to_string(), self.client.clone(), schema.clone());
+            make_flight_sql_stream(sql.to_string(), self.client.clone(), Arc::clone(&schema));
         let stream = futures::stream::once(future_stream).try_flatten();
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
-            schema.clone(),
+            Arc::clone(&schema),
             stream,
         )))
     }

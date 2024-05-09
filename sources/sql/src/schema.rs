@@ -21,7 +21,7 @@ pub struct SQLSchemaProvider {
 
 impl SQLSchemaProvider {
     pub async fn new(provider: Arc<SQLFederationProvider>) -> Result<Self> {
-        let tables = provider.clone().executor.table_names().await?;
+        let tables = Arc::clone(&provider).executor.table_names().await?;
 
         Self::new_with_tables(provider, tables).await
     }
@@ -32,7 +32,7 @@ impl SQLSchemaProvider {
     ) -> Result<Self> {
         let futures: Vec<_> = tables
             .into_iter()
-            .map(|t| SQLTableSource::new(provider.clone(), t))
+            .map(|t| SQLTableSource::new(Arc::clone(&provider), t))
             .collect();
         let results: Result<Vec<_>> = join_all(futures).await.into_iter().collect();
         let sources = results?.into_iter().map(Arc::new).collect();
@@ -60,7 +60,9 @@ impl SchemaProvider for SQLSchemaProvider {
             .iter()
             .find(|s| s.table_name.eq_ignore_ascii_case(name))
         {
-            let adaptor = FederatedTableProviderAdaptor::new(source.clone());
+            let adaptor = FederatedTableProviderAdaptor::new(
+                Arc::clone(source) as Arc<dyn FederatedTableSource>
+            );
             return Ok(Some(Arc::new(adaptor)));
         }
         Ok(None)
@@ -116,8 +118,7 @@ pub struct SQLTableSource {
 impl SQLTableSource {
     // creates a SQLTableSource and infers the table schema
     pub async fn new(provider: Arc<SQLFederationProvider>, table_name: String) -> Result<Self> {
-        let schema = provider
-            .clone()
+        let schema = Arc::clone(&provider)
             .executor
             .get_table_schema(table_name.as_str())
             .await?;
@@ -139,7 +140,7 @@ impl SQLTableSource {
 
 impl FederatedTableSource for SQLTableSource {
     fn federation_provider(&self) -> Arc<dyn FederationProvider> {
-        self.provider.clone()
+        Arc::clone(&self.provider) as Arc<dyn FederationProvider>
     }
 }
 
@@ -148,7 +149,7 @@ impl TableSource for SQLTableSource {
         self
     }
     fn schema(&self) -> SchemaRef {
-        self.schema.clone()
+        Arc::clone(&self.schema)
     }
     fn table_type(&self) -> TableType {
         TableType::Temporary

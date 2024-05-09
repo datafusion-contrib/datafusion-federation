@@ -62,7 +62,7 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
         assert_eq!(exprs.len(), 0, "expression size inconsistent");
         Self {
             plan: self.plan.clone(),
-            planner: self.planner.clone(),
+            planner: Arc::clone(&self.planner),
         }
     }
 }
@@ -144,7 +144,7 @@ impl ExtensionPlanner for FederatedPlanner {
             assert_eq!(logical_inputs.len(), 0, "Inconsistent number of inputs");
             assert_eq!(physical_inputs.len(), 0, "Inconsistent number of inputs");
 
-            let fed_planner = fed_node.planner.clone();
+            let fed_planner = Arc::clone(&fed_node.planner);
             let exec_plan = fed_planner.plan_federation(fed_node, session_state).await?;
             return Ok(Some(exec_plan));
         }

@@ -38,7 +38,7 @@ impl SQLFederationProvider {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
             analyzer: Arc::new(Analyzer::with_rules(vec![Arc::new(
-                SQLFederationAnalyzerRule::new(executor.clone()),
+                SQLFederationAnalyzerRule::new(Arc::clone(&executor)),
             )])),
             executor,
         }
@@ -55,7 +55,7 @@ impl FederationProvider for SQLFederationProvider {
     }
 
     fn analyzer(&self) -> Option<Arc<Analyzer>> {
-        Some(self.analyzer.clone())
+        Some(Arc::clone(&self.analyzer))
     }
 }
 
@@ -66,7 +66,7 @@ struct SQLFederationAnalyzerRule {
 impl SQLFederationAnalyzerRule {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
-            planner: Arc::new(SQLFederationPlanner::new(executor.clone())),
+            planner: Arc::new(SQLFederationPlanner::new(Arc::clone(&executor))),
         }
     }
 }
@@ -75,7 +75,7 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
         // Simply accept the entire plan for now
 
-        let fed_plan = FederatedPlanNode::new(plan.clone(), self.planner.clone());
+        let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
         let ext_node = Extension {
             node: Arc::new(fed_plan),
         };
@@ -106,7 +106,7 @@ impl FederationPlanner for SQLFederationPlanner {
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Ok(Arc::new(VirtualExecutionPlan::new(
             node.plan().clone(),
-            self.executor.clone(),
+            Arc::clone(&self.executor),
         )))
     }
 }
