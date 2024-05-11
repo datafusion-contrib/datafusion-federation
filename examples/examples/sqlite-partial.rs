@@ -7,24 +7,15 @@ use datafusion::{
     error::Result,
     execution::context::{SessionContext, SessionState},
 };
-use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
 use datafusion_federation_sql::{connectorx::CXExecutor, SQLFederationProvider, SQLSchemaProvider};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let state = SessionContext::new().state();
-    // Register FederationAnalyzer
-    // TODO: Interaction with other analyzers & optimizers.
-    let state = state
-        .add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()))
-        .with_query_planner(Arc::new(FederatedQueryPlanner::new()));
-
-    // Register schema
+    let state = datafusion_federation::default_session_state();
     let provider = MultiSchemaProvider::new(vec![
         create_sqlite_provider(vec!["Artist"], "conn1").await?,
         create_sqlite_provider(vec!["Track", "Album"], "conn2").await?,
     ]);
-
     overwrite_default_schema(&state, Arc::new(provider))?;
 
     // Run query
