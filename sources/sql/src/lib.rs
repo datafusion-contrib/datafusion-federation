@@ -21,6 +21,7 @@ use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProv
 mod schema;
 pub use schema::*;
 
+#[cfg(feature = "connectorx")]
 pub mod connectorx;
 mod executor;
 pub use executor::*;
