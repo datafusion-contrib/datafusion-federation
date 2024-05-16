@@ -136,6 +136,10 @@ impl SQLTableSource {
             schema,
         })
     }
+
+    pub fn table_name(&self) -> &str {
+        self.table_name.as_str()
+    }
 }
 
 impl FederatedTableSource for SQLTableSource {

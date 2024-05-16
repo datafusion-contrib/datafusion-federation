@@ -7,16 +7,18 @@ use datafusion::{
     config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{Extension, LogicalPlan},
+    logical_expr::{Extension, LogicalPlan, SubqueryAlias},
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
         DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
         SendableRecordBatchStream,
     },
-    sql::unparser::plan_to_sql,
+    sql::{unparser::plan_to_sql, TableReference},
 };
-use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
+use datafusion_federation::{
+    get_table_source, FederatedPlanNode, FederationPlanner, FederationProvider,
+};
 
 mod schema;
 pub use schema::*;
@@ -74,7 +76,8 @@ impl SQLFederationAnalyzerRule {
 
 impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        // Simply accept the entire plan for now
+        // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
+        let plan = rewrite_table_scans(&plan)?;
 
         let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
         let ext_node = Extension {
@@ -88,6 +91,52 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
         "federate_sql"
     }
 }
+
+/// Rewrite table scans to use the original federated table name.
+fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
+    if plan.inputs().is_empty() {
+        if let LogicalPlan::TableScan(table_scan) = plan {
+            let original_table_name = table_scan.table_name.clone();
+            let mut new_table_scan = table_scan.clone();
+
+            let Some(federated_source) = get_table_source(&table_scan.source)? else {
+                // Not a federated source
+                return Ok(plan.clone());
+            };
+
+            match federated_source.as_any().downcast_ref::<SQLTableSource>() {
+                Some(sql_table_source) => {
+                    new_table_scan.table_name = TableReference::from(sql_table_source.table_name());
+                }
+                None => {
+                    // Not a SQLTableSource (is this possible?)
+                    return Ok(plan.clone());
+                }
+            }
+
+            // Wrap the table scan in a SubqueryAlias back to the original table name, so references continue to work.
+            let subquery_alias = LogicalPlan::SubqueryAlias(SubqueryAlias::try_new(
+                Arc::new(LogicalPlan::TableScan(new_table_scan)),
+                original_table_name,
+            )?);
+
+            return Ok(subquery_alias);
+        } else {
+            return Ok(plan.clone());
+        }
+    }
+
+    let rewritten_inputs = plan
+        .inputs()
+        .into_iter()
+        .map(rewrite_table_scans)
+        .collect::<Result<Vec<_>>>()?;
+
+    let new_plan = plan.with_new_exprs(plan.expressions(), rewritten_inputs)?;
+
+    Ok(new_plan)
+}
+
 struct SQLFederationPlanner {
     executor: Arc<dyn SQLExecutor>,
 }
