@@ -22,6 +22,7 @@ datafusion-federation.path = "../../datafusion-federation"
 # derive_builder = "0.13.0"
 futures = "0.3.30"
 tokio = "1.35.1"
+tracing = "0.1.40"
 
 [features]
 connectorx = ["dep:connectorx"]

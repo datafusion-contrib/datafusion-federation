@@ -7,7 +7,7 @@ use datafusion::{
     config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{Extension, LogicalPlan, SubqueryAlias},
+    logical_expr::{BinaryExpr, Expr, Extension, LogicalPlan, Subquery, SubqueryAlias},
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
@@ -126,15 +126,45 @@ fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
         }
     }
 
+    let mut new_expressions = vec![];
+    for expression in plan.expressions() {
+        new_expressions.push(rewrite_table_scans_in_subqueries(expression)?);
+    }
+
     let rewritten_inputs = plan
         .inputs()
         .into_iter()
         .map(rewrite_table_scans)
         .collect::<Result<Vec<_>>>()?;
 
-    let new_plan = plan.with_new_exprs(plan.expressions(), rewritten_inputs)?;
+    let new_plan = plan.with_new_exprs(new_expressions, rewritten_inputs)?;
 
     Ok(new_plan)
+}
+
+fn rewrite_table_scans_in_subqueries(expr: Expr) -> Result<Expr> {
+    match expr {
+        Expr::ScalarSubquery(subquery) => {
+            let new_subquery = rewrite_table_scans(&subquery.subquery)?;
+            Ok(Expr::ScalarSubquery(Subquery {
+                subquery: Arc::new(new_subquery),
+                outer_ref_columns: subquery.outer_ref_columns,
+            }))
+        }
+        Expr::BinaryExpr(binary_expr) => {
+            let left = rewrite_table_scans_in_subqueries(*binary_expr.left)?;
+            let right = rewrite_table_scans_in_subqueries(*binary_expr.right)?;
+            Ok(Expr::BinaryExpr(BinaryExpr::new(
+                Box::new(left),
+                binary_expr.op,
+                Box::new(right),
+            )))
+        }
+        _ => {
+            tracing::debug!("rewrite_table_scans_in_subqueries: no match for expr={expr:?}",);
+            Ok(expr)
+        }
+    }
 }
 
 struct SQLFederationPlanner {
