@@ -4,19 +4,10 @@ use std::{any::Any, collections::HashMap, sync::Arc, vec};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
-    common::Column,
-    config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{
-        expr::{
-            AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
-            WindowFunction,
-        },
-        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
-        TryCast,
-    },
-    optimizer::analyzer::{Analyzer, AnalyzerRule},
+    logical_expr::{Extension, LogicalPlan},
+    optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
         DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
@@ -44,15 +35,15 @@ pub use executor::*;
 
 // SQLFederationProvider provides federation to SQL DMBSs.
 pub struct SQLFederationProvider {
-    analyzer: Arc<Analyzer>,
+    optimizer: Arc<Optimizer>,
     executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationProvider {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
-            analyzer: Arc::new(Analyzer::with_rules(vec![Arc::new(
-                SQLFederationAnalyzerRule::new(Arc::clone(&executor)),
+            optimizer: Arc::new(Optimizer::with_rules(vec![Arc::new(
+                SQLFederationOptimizerRule::new(executor.clone()),
             )])),
             executor,
         }
@@ -68,16 +59,17 @@ impl FederationProvider for SQLFederationProvider {
         self.executor.compute_context()
     }
 
-    fn analyzer(&self) -> Option<Arc<Analyzer>> {
-        Some(Arc::clone(&self.analyzer))
+
+    fn optimizer(&self) -> Option<Arc<Optimizer>> {
+        Some(self.optimizer.clone())
     }
 }
 
-struct SQLFederationAnalyzerRule {
+struct SQLFederationOptimizerRule {
     planner: Arc<dyn FederationPlanner>,
 }
 
-impl SQLFederationAnalyzerRule {
+impl SQLFederationOptimizerRule {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
             planner: Arc::new(SQLFederationPlanner::new(Arc::clone(&executor))),
@@ -85,13 +77,24 @@ impl SQLFederationAnalyzerRule {
     }
 }
 
-impl AnalyzerRule for SQLFederationAnalyzerRule {
-    fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
+impl OptimizerRule for SQLFederationOptimizerRule {
+    fn try_optimize(
+        &self,
+        plan: &LogicalPlan,
+        _config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
+        if let LogicalPlan::Extension(Extension { ref node }) = plan {
+            if node.name() == "Federated" {
+                // Avoid attempting double federation
+                return Ok(None);
+            }
+        }
+        // Simply accept the entire plan for now
+        let fed_plan = FederatedPlanNode::new(plan.clone(), self.planner.clone());
         let ext_node = Extension {
             node: Arc::new(fed_plan),
         };
-        Ok(LogicalPlan::Extension(ext_node))
+        Ok(Some(LogicalPlan::Extension(ext_node)))
     }
 
     /// A human readable name for this analyzer rule

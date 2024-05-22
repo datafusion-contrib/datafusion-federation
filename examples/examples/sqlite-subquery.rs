@@ -20,15 +20,7 @@ async fn main() -> Result<()> {
 
     // Run query
     let ctx = SessionContext::new_with_state(state);
-    let query = r#"SELECT
-             t.TrackId,
-             t.Name AS TrackName,
-             a.Title AS AlbumTitle,
-             ar.Name AS ArtistName
-         FROM Track t
-         JOIN Album a ON t.AlbumId = a.AlbumId
-         JOIN Artist ar ON a.ArtistId = ar.ArtistId
-         limit 10"#;
+    let query = r#"SELECT Name, (SELECT Title FROM Album limit 1) FROM Artist limit 1"#;
     let df = ctx.sql(query).await?;
 
     // let explain = df.clone().explain(true, false)?;
