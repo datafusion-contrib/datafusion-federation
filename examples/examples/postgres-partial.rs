@@ -6,19 +6,12 @@ use datafusion::{
     error::Result,
     execution::context::{SessionContext, SessionState},
 };
-use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
 use datafusion_federation_sql::connectorx::CXExecutor;
 use datafusion_federation_sql::{MultiSchemaProvider, SQLFederationProvider, SQLSchemaProvider};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let state = SessionContext::new().state();
-    // Register FederationAnalyzer
-    // TODO: Interaction with other analyzers & optimizers.
-    let state = state
-        .add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()))
-        .with_query_planner(Arc::new(FederatedQueryPlanner::new()));
-
+    let state = datafusion_federation::default_session_state();
     let df = task::spawn_blocking(move || {
     // Register schema
     let pg_provider_1 = async_std::task::block_on(create_postgres_provider(vec!["class"], "conn1")).unwrap();
