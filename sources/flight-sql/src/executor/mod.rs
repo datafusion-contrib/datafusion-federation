@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use datafusion::{
     error::{DataFusionError, Result},
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
-    sql::sqlparser::dialect::{Dialect, GenericDialect},
+    sql::unparser::dialect::{DefaultDialect, Dialect},
 };
 use datafusion_federation_sql::SQLExecutor;
 use futures::TryStreamExt;
@@ -96,7 +96,7 @@ impl SQLExecutor for FlightSQLExecutor {
     }
 
     fn dialect(&self) -> Arc<dyn Dialect> {
-        Arc::new(GenericDialect {})
+        Arc::new(DefaultDialect {})
     }
 }
 

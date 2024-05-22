@@ -22,7 +22,10 @@ use datafusion::{
         DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
         SendableRecordBatchStream,
     },
-    sql::{unparser::plan_to_sql, TableReference},
+    sql::{
+        unparser::{plan_to_sql, Unparser},
+        TableReference,
+    },
 };
 use datafusion_federation::{
     get_table_source, FederatedPlanNode, FederationPlanner, FederationProvider,
@@ -597,7 +600,9 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let ast = plan_to_sql(&self.plan)?;
+        let dialect = self.executor.dialect();
+        let unparser = Unparser::new(dialect.as_ref());
+        let ast = unparser.plan_to_sql(&self.plan)?;
         let query = format!("{ast}");
 
         self.executor.execute(query.as_str(), self.schema())

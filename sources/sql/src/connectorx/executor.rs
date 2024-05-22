@@ -10,7 +10,7 @@ use datafusion::{
     physical_plan::{
         stream::RecordBatchStreamAdapter, EmptyRecordBatchStream, SendableRecordBatchStream,
     },
-    sql::sqlparser::dialect::{Dialect, GenericDialect, PostgreSqlDialect, SQLiteDialect},
+    sql::unparser::dialect::{DefaultDialect, Dialect, PostgreSqlDialect, SqliteDialect},
 };
 use futures::executor::block_on;
 use std::sync::Arc;
@@ -92,8 +92,8 @@ impl SQLExecutor for CXExecutor {
     fn dialect(&self) -> Arc<dyn Dialect> {
         match &self.conn.ty {
             SourceType::Postgres => Arc::new(PostgreSqlDialect {}),
-            SourceType::SQLite => Arc::new(SQLiteDialect {}),
-            _ => Arc::new(GenericDialect {}),
+            SourceType::SQLite => Arc::new(SqliteDialect {}),
+            _ => Arc::new(DefaultDialect {}),
         }
     }
 }
