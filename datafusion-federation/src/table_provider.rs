@@ -7,7 +7,7 @@ use datafusion::{
     datasource::TableProvider,
     error::{DataFusionError, Result},
     execution::context::SessionState,
-    logical_expr::{Expr, LogicalPlan, TableSource, TableType},
+    logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType},
     physical_plan::ExecutionPlan,
 };
 
@@ -87,6 +87,19 @@ impl TableProvider for FederatedTableProviderAdaptor {
         }
 
         self.source.get_column_default(column)
+    }
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> Result<Vec<TableProviderFilterPushDown>> {
+        if let Some(table_provider) = &self.table_provider {
+            return table_provider.supports_filters_pushdown(filters);
+        }
+
+        Ok(vec![
+            TableProviderFilterPushDown::Unsupported;
+            filters.len()
+        ])
     }
 
     // Scan is not supported; the adaptor should be replaced
