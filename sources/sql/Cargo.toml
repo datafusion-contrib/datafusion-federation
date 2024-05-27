@@ -26,3 +26,6 @@ tracing = "0.1.40"
 
 [features]
 connectorx = ["dep:connectorx"]
+
+[dev-dependencies]
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }

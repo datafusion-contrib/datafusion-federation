@@ -183,11 +183,25 @@ fn rewrite_table_scans_in_expr(
                 Box::new(right),
             )))
         }
-        Expr::Column(col) => {
+        Expr::Column(mut col) => {
             if let Some(rewrite) = col.relation.as_ref().and_then(|r| known_rewrites.get(r)) {
                 Ok(Expr::Column(Column::new(Some(rewrite.clone()), &col.name)))
             } else {
-                Ok(Expr::Column(col))
+                // Check if any of the rewrites match any substring in col.name, and replace that part of the string if so.
+                // This will handles cases like "MAX(foo.df_table.a)" -> "MAX(remote_table.a)"
+                let rewritten_name = known_rewrites.iter().find_map(|(table_ref, rewrite)| {
+                    let table_ref_str = table_ref.to_string();
+                    if col.name.contains(&table_ref_str) {
+                        Some(col.name.replace(&table_ref_str, &rewrite.to_string()))
+                    } else {
+                        None
+                    }
+                });
+                if let Some(new_name) = rewritten_name {
+                    Ok(Expr::Column(Column::new(col.relation.take(), new_name)))
+                } else {
+                    Ok(Expr::Column(col))
+                }
             }
         }
         Expr::Alias(alias) => {
@@ -598,9 +612,11 @@ impl ExecutionPlan for VirtualExecutionPlan {
 mod tests {
     use datafusion::{
         arrow::datatypes::{DataType, Field},
+        catalog::schema::{MemorySchemaProvider, SchemaProvider},
         common::Column,
-        datasource::DefaultTableSource,
+        datasource::{DefaultTableSource, TableProvider},
         error::DataFusionError,
+        execution::context::SessionContext,
         logical_expr::LogicalPlanBuilder,
         sql::sqlparser::dialect::{Dialect, GenericDialect},
     };
@@ -643,8 +659,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_rewrite_table_scans() -> Result<()> {
+    fn get_test_table_provider() -> Arc<dyn TableProvider> {
         let sql_federation_provider =
             Arc::new(SQLFederationProvider::new(Arc::new(TestSQLExecutor {})));
 
@@ -653,13 +668,39 @@ mod tests {
             Field::new("b", DataType::Utf8, false),
             Field::new("c", DataType::Date32, false),
         ]));
-        let table_source = Arc::new(SQLTableSource::new_with_schema(
-            sql_federation_provider,
-            "remote_table".to_string(),
-            schema,
-        )?);
-        let table_provider_adaptor = Arc::new(FederatedTableProviderAdaptor::new(table_source));
-        let default_table_source = Arc::new(DefaultTableSource::new(table_provider_adaptor));
+        let table_source = Arc::new(
+            SQLTableSource::new_with_schema(
+                sql_federation_provider,
+                "remote_table".to_string(),
+                schema,
+            )
+            .expect("to have a valid SQLTableSource"),
+        );
+        Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+
+    fn get_test_table_source() -> Arc<DefaultTableSource> {
+        Arc::new(DefaultTableSource::new(get_test_table_provider()))
+    }
+
+    fn get_test_df_context() -> SessionContext {
+        let ctx = SessionContext::new();
+        let catalog = ctx
+            .catalog("datafusion")
+            .expect("default catalog is datafusion");
+        let foo_schema = Arc::new(MemorySchemaProvider::new()) as Arc<dyn SchemaProvider>;
+        catalog
+            .register_schema("foo", Arc::clone(&foo_schema))
+            .expect("to register schema");
+        foo_schema
+            .register_table("df_table".to_string(), get_test_table_provider())
+            .expect("to register table");
+        ctx
+    }
+
+    #[test]
+    fn test_rewrite_table_scans_basic() -> Result<()> {
+        let default_table_source = get_test_table_source();
         let plan =
             LogicalPlanBuilder::scan("foo.df_table", default_table_source, None)?.project(vec![
                 Expr::Column(Column::from_qualified_name("foo.df_table.a")),
@@ -680,6 +721,72 @@ mod tests {
             format!("{unparsed_sql}"),
             r#"SELECT "remote_table"."a", "remote_table"."b", "remote_table"."c" FROM "remote_table""#
         );
+
+        Ok(())
+    }
+
+    fn init_tracing() {
+        let subscriber = tracing_subscriber::FmtSubscriber::builder()
+            .with_env_filter("debug")
+            .with_ansi(true)
+            .finish();
+        let _ = tracing::subscriber::set_global_default(subscriber);
+    }
+
+    #[tokio::test]
+    async fn test_rewrite_table_scans_agg() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_df_context();
+
+        let agg_tests = vec![
+            (
+                "SELECT MAX(a) FROM foo.df_table",
+                r#"SELECT MAX("remote_table"."a") FROM "remote_table""#,
+            ),
+            (
+                "SELECT MIN(a) FROM foo.df_table",
+                r#"SELECT MIN("remote_table"."a") FROM "remote_table""#,
+            ),
+            (
+                "SELECT AVG(a) FROM foo.df_table",
+                r#"SELECT AVG("remote_table"."a") FROM "remote_table""#,
+            ),
+            (
+                "SELECT SUM(a) FROM foo.df_table",
+                r#"SELECT SUM("remote_table"."a") FROM "remote_table""#,
+            ),
+            (
+                "SELECT COUNT(a) FROM foo.df_table",
+                r#"SELECT COUNT("remote_table"."a") FROM "remote_table""#,
+            ),
+            (
+                "SELECT COUNT(a) as cnt FROM foo.df_table",
+                r#"SELECT COUNT("remote_table"."a") AS "cnt" FROM "remote_table""#,
+            ),
+        ];
+
+        for test in agg_tests {
+            let data_frame = ctx.sql(test.0).await?;
+
+            println!("before optimization: \n{:#?}", data_frame.logical_plan());
+
+            let mut known_rewrites = HashMap::new();
+            let rewritten_plan =
+                rewrite_table_scans(data_frame.logical_plan(), &mut known_rewrites)?;
+
+            println!("rewritten_plan: \n{:#?}", rewritten_plan);
+
+            let unparsed_sql = plan_to_sql(&rewritten_plan)?;
+
+            println!("unparsed_sql: \n{unparsed_sql}");
+
+            assert_eq!(
+                format!("{unparsed_sql}"),
+                test.1,
+                "SQL under test: {}",
+                test.0
+            );
+        }
 
         Ok(())
     }
