@@ -623,7 +623,7 @@ mod tests {
         error::DataFusionError,
         execution::context::SessionContext,
         logical_expr::LogicalPlanBuilder,
-        sql::sqlparser::dialect::{Dialect, GenericDialect},
+        sql::{unparser::dialect::DefaultDialect, unparser::dialect::Dialect},
     };
     use datafusion_federation::FederatedTableProviderAdaptor;
 
@@ -642,7 +642,7 @@ mod tests {
         }
 
         fn dialect(&self) -> Arc<dyn Dialect> {
-            Arc::new(GenericDialect {})
+            Arc::new(DefaultDialect {})
         }
 
         fn execute(&self, _query: &str, _schema: SchemaRef) -> Result<SendableRecordBatchStream> {
