@@ -28,7 +28,7 @@ use datafusion::{
     },
 };
 use datafusion_federation::{
-    get_table_source, FederatedPlanNode, FederationPlanner, FederationProvider,
+    get_table_source, schema_cast, FederatedPlanNode, FederationPlanner, FederationProvider,
 };
 
 mod schema;
@@ -526,10 +526,13 @@ impl FederationPlanner for SQLFederationPlanner {
         node: &FederatedPlanNode,
         _session_state: &SessionState,
     ) -> Result<Arc<dyn ExecutionPlan>> {
-        Ok(Arc::new(VirtualExecutionPlan::new(
+        let schema = Arc::new(node.plan().schema().as_arrow().clone());
+        let input = Arc::new(VirtualExecutionPlan::new(
             node.plan().clone(),
             Arc::clone(&self.executor),
-        )))
+        ));
+        let schema_cast_exec = schema_cast::SchemaCastScanExec::new(input, schema);
+        Ok(Arc::new(schema_cast_exec))
     }
 }
 

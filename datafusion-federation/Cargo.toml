@@ -13,6 +13,8 @@ path = "src/lib.rs"
 [dependencies]
 async-trait.workspace = true
 datafusion.workspace = true
+async-stream.workspace = true
+futures.workspace = true
 
 [package.metadata.docs.rs]
 

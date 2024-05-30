@@ -21,5 +21,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 async-trait = "0.1.77"
+async-stream = "0.3.5"
+futures = "0.3.30"
 datafusion = { git = "https://github.com/spiceai/datafusion.git", rev = "4b6489ffd8d138b138c2049966b19d073867885f" }
 datafusion-substrait = { git = "https://github.com/spiceai/datafusion.git", folder = "datafusion/substrait", rev = "4b6489ffd8d138b138c2049966b19d073867885f" }
