@@ -57,13 +57,13 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
         write!(f, "Federated\n {:?}", self.plan)
     }
 
-    fn from_template(&self, exprs: &[Expr], inputs: &[LogicalPlan]) -> Self {
+    fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Result<Self> {
         assert_eq!(inputs.len(), 0, "input size inconsistent");
         assert_eq!(exprs.len(), 0, "expression size inconsistent");
-        Self {
+        Ok(Self {
             plan: self.plan.clone(),
             planner: Arc::clone(&self.planner),
-        }
+        })
     }
 }
 

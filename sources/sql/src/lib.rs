@@ -13,8 +13,8 @@ use datafusion::{
             AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
             WindowFunction,
         },
-        Between, BinaryExpr, Case, Cast, Expr, Extension, GetIndexedField, GroupingSet, Like,
-        LogicalPlan, Subquery, TryCast,
+        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
+        TryCast,
     },
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
@@ -282,13 +282,6 @@ fn rewrite_table_scans_in_expr(
             let expr = rewrite_table_scans_in_expr(*e, known_rewrites)?;
             Ok(Expr::Negative(Box::new(expr)))
         }
-        Expr::GetIndexedField(indexed_field) => {
-            let expr = rewrite_table_scans_in_expr(*indexed_field.expr, known_rewrites)?;
-            Ok(Expr::GetIndexedField(GetIndexedField::new(
-                Box::new(expr),
-                indexed_field.field,
-            )))
-        }
         Expr::Between(between) => {
             let expr = rewrite_table_scans_in_expr(*between.expr, known_rewrites)?;
             let low = rewrite_table_scans_in_expr(*between.low, known_rewrites)?;
@@ -352,7 +345,7 @@ fn rewrite_table_scans_in_expr(
                 .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                 .collect::<Result<Vec<Expr>>>()?;
             Ok(Expr::ScalarFunction(ScalarFunction {
-                func_def: sf.func_def,
+                func: sf.func,
                 args,
             }))
         }
@@ -587,7 +580,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         self.schema()
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 

@@ -16,8 +16,8 @@ use arrow_flight::sql::{
     CommandGetCrossReference, CommandGetDbSchemas, CommandGetExportedKeys, CommandGetImportedKeys,
     CommandGetPrimaryKeys, CommandGetSqlInfo, CommandGetTableTypes, CommandGetTables,
     CommandGetXdbcTypeInfo, CommandPreparedStatementQuery, CommandPreparedStatementUpdate,
-    CommandStatementQuery, CommandStatementSubstraitPlan, CommandStatementUpdate, SqlInfo,
-    TicketStatementQuery,
+    CommandStatementQuery, CommandStatementSubstraitPlan, CommandStatementUpdate,
+    DoPutPreparedStatementResult, SqlInfo, TicketStatementQuery,
 };
 use arrow_flight::{
     Action, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse,
@@ -601,7 +601,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         &self,
         _query: CommandPreparedStatementQuery,
         request: Request<PeekableFlightDataStream>,
-    ) -> Result<Response<<Self as FlightService>::DoPutStream>> {
+    ) -> Result<DoPutPreparedStatementResult> {
         info!("do_put_prepared_statement_query");
         let (_, _) = self.new_context(request)?;
 
