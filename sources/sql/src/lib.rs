@@ -160,6 +160,76 @@ fn rewrite_table_scans(
     Ok(new_plan)
 }
 
+// The function replaces occurrences of table_ref_str in col_name with the new name defined by rewrite.
+// The name to rewrite should NOT be a substring of another name.
+// Supports multiple occurrences of table_ref_str in col_name.
+fn rewrite_column_name_in_expr(
+    col_name: &str,
+    table_ref_str: &str,
+    rewrite: &str,
+    start_pos: usize,
+) -> Option<String> {
+    if start_pos >= col_name.len() {
+        return None;
+    }
+
+    // Find the first occurrence of table_ref_str starting from start_pos
+    let Some(idx) = col_name[start_pos..].find(table_ref_str) else {
+        return None;
+    };
+
+    // Calculate the absolute index of the occurrence in string as the index above is relative to start_pos
+    let idx = start_pos + idx;
+
+    if idx > 0 {
+        // Check if the previous character is alphabetic, numeric, underscore or period, in which case we
+        // should not rewrite as it is a part of another name.
+        if let Some(prev_char) = col_name.chars().nth(idx - 1) {
+            if prev_char.is_alphabetic()
+                || prev_char.is_numeric()
+                || prev_char == '_'
+                || prev_char == '.'
+            {
+                return rewrite_column_name_in_expr(
+                    col_name,
+                    table_ref_str,
+                    rewrite,
+                    idx + table_ref_str.len(),
+                );
+            }
+        }
+    }
+
+    // Check if the next character is alphabetic, numeric or underscore, in which case we
+    // should not rewrite as it is a part of another name.
+    if let Some(next_char) = col_name.chars().nth(idx + table_ref_str.len()) {
+        if next_char.is_alphabetic() || next_char.is_numeric() || next_char == '_' {
+            return rewrite_column_name_in_expr(
+                col_name,
+                table_ref_str,
+                rewrite,
+                idx + table_ref_str.len(),
+            );
+        }
+    }
+
+    // Found full match, replace table_ref_str occurrence with rewrite
+    let rewritten_name = format!(
+        "{}{}{}",
+        &col_name[..idx],
+        rewrite,
+        &col_name[idx + table_ref_str.len()..]
+    );
+
+    // Check if the rewritten name contains more occurrence of table_ref_str, and rewrite them as well
+    // This is done by providing the updated start_pos for search
+    match rewrite_column_name_in_expr(&rewritten_name, table_ref_str, rewrite, idx + rewrite.len())
+    {
+        Some(new_name) => Some(new_name), // more occurrences found
+        None => Some(rewritten_name),     // no more occurrences/changes
+    }
+}
+
 fn rewrite_table_scans_in_expr(
     expr: Expr,
     known_rewrites: &mut HashMap<TableReference, TableReference>,
@@ -192,15 +262,21 @@ fn rewrite_table_scans_in_expr(
             } else {
                 // Check if any of the rewrites match any substring in col.name, and replace that part of the string if so.
                 // This will handles cases like "MAX(foo.df_table.a)" -> "MAX(remote_table.a)"
-                let rewritten_name = known_rewrites.iter().find_map(|(table_ref, rewrite)| {
-                    let table_ref_str = table_ref.to_string();
-                    if col.name.contains(&table_ref_str) {
-                        Some(col.name.replace(&table_ref_str, &rewrite.to_string()))
-                    } else {
-                        None
-                    }
-                });
-                if let Some(new_name) = rewritten_name {
+                let (new_name, was_rewritten) = known_rewrites.iter().fold(
+                    (col.name.to_string(), false),
+                    |(col_name, was_rewritten), (table_ref, rewrite)| {
+                        match rewrite_column_name_in_expr(
+                            &col_name,
+                            &table_ref.to_string(),
+                            &rewrite.to_string(),
+                            0,
+                        ) {
+                            Some(new_name) => (new_name, true),
+                            None => (col_name, was_rewritten),
+                        }
+                    },
+                );
+                if was_rewritten {
                     Ok(Expr::Column(Column::new(col.relation.take(), new_name)))
                 } else {
                     Ok(Expr::Column(col))
@@ -696,6 +772,14 @@ mod tests {
         foo_schema
             .register_table("df_table".to_string(), get_test_table_provider())
             .expect("to register table");
+
+        let public_schema = catalog
+            .schema("public")
+            .expect("public schema should exist");
+        public_schema
+            .register_table("app_table".to_string(), get_test_table_provider())
+            .expect("to register table");
+
         ctx
     }
 
@@ -720,7 +804,7 @@ mod tests {
 
         assert_eq!(
             format!("{unparsed_sql}"),
-            r#"SELECT "remote_table"."a", "remote_table"."b", "remote_table"."c" FROM "remote_table""#
+            r#"SELECT remote_table.a, remote_table.b, remote_table.c FROM remote_table"#
         );
 
         Ok(())
@@ -742,52 +826,98 @@ mod tests {
         let agg_tests = vec![
             (
                 "SELECT MAX(a) FROM foo.df_table",
-                r#"SELECT MAX("remote_table"."a") FROM "remote_table""#,
+                r#"SELECT MAX(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT MIN(a) FROM foo.df_table",
-                r#"SELECT MIN("remote_table"."a") FROM "remote_table""#,
+                r#"SELECT MIN(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT AVG(a) FROM foo.df_table",
-                r#"SELECT AVG("remote_table"."a") FROM "remote_table""#,
+                r#"SELECT AVG(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT SUM(a) FROM foo.df_table",
-                r#"SELECT SUM("remote_table"."a") FROM "remote_table""#,
+                r#"SELECT SUM(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT COUNT(a) FROM foo.df_table",
-                r#"SELECT COUNT("remote_table"."a") FROM "remote_table""#,
+                r#"SELECT COUNT(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT COUNT(a) as cnt FROM foo.df_table",
-                r#"SELECT COUNT("remote_table"."a") AS "cnt" FROM "remote_table""#,
+                r#"SELECT COUNT(remote_table.a) AS cnt FROM remote_table"#,
+            ),
+            // multiple occurrences of the same table in single aggregation expression
+            (
+                "SELECT COUNT(CASE WHEN a > 0 THEN a ELSE 0 END) FROM app_table",
+                r#"SELECT COUNT(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE 0 END) FROM remote_table"#,
+            ),
+            // different tables in single aggregation expression
+            (
+                "SELECT COUNT(CASE WHEN app_table.a > 0 THEN app_table.a ELSE foo.df_table.a END) FROM app_table, foo.df_table",
+                r#"SELECT COUNT(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE remote_table.a END) FROM remote_table JOIN remote_table ON true"#,
             ),
         ];
 
         for test in agg_tests {
-            let data_frame = ctx.sql(test.0).await?;
-
-            println!("before optimization: \n{:#?}", data_frame.logical_plan());
-
-            let mut known_rewrites = HashMap::new();
-            let rewritten_plan =
-                rewrite_table_scans(data_frame.logical_plan(), &mut known_rewrites)?;
-
-            println!("rewritten_plan: \n{:#?}", rewritten_plan);
-
-            let unparsed_sql = plan_to_sql(&rewritten_plan)?;
-
-            println!("unparsed_sql: \n{unparsed_sql}");
-
-            assert_eq!(
-                format!("{unparsed_sql}"),
-                test.1,
-                "SQL under test: {}",
-                test.0
-            );
+            test_sql(&ctx, test.0, test.1).await?;
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rewrite_table_scans_alias() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_df_context();
+
+        let tests = vec![
+            (
+                "SELECT COUNT(app_table_a) FROM (SELECT a as app_table_a FROM app_table)",
+                r#"SELECT COUNT(app_table_a) FROM (SELECT remote_table.a AS app_table_a FROM remote_table)"#,
+            ),
+            (
+                "SELECT app_table_a FROM (SELECT a as app_table_a FROM app_table)",
+                r#"SELECT app_table_a FROM (SELECT remote_table.a AS app_table_a FROM remote_table)"#,
+            ),
+            (
+                "SELECT aapp_table FROM (SELECT a as aapp_table FROM app_table)",
+                r#"SELECT aapp_table FROM (SELECT remote_table.a AS aapp_table FROM remote_table)"#,
+            ),
+        ];
+
+        for test in tests {
+            test_sql(&ctx, test.0, test.1).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn test_sql(
+        ctx: &SessionContext,
+        sql_query: &str,
+        expected_sql: &str,
+    ) -> Result<(), datafusion::error::DataFusionError> {
+        let data_frame = ctx.sql(sql_query).await?;
+
+        println!("before optimization: \n{:#?}", data_frame.logical_plan());
+
+        let mut known_rewrites = HashMap::new();
+        let rewritten_plan = rewrite_table_scans(data_frame.logical_plan(), &mut known_rewrites)?;
+
+        println!("rewritten_plan: \n{:#?}", rewritten_plan);
+
+        let unparsed_sql = plan_to_sql(&rewritten_plan)?;
+
+        println!("unparsed_sql: \n{unparsed_sql}");
+
+        assert_eq!(
+            format!("{unparsed_sql}"),
+            expected_sql,
+            "SQL under test: {}",
+            sql_query
+        );
 
         Ok(())
     }
