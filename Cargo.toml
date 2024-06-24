@@ -23,5 +23,5 @@ readme = "README.md"
 async-trait = "0.1.77"
 async-stream = "0.3.5"
 futures = "0.3.30"
-datafusion = { git = "https://github.com/spiceai/datafusion.git", rev = "be2c2c1f74823956e609a23ca38657cd76c2fcfe" }
-datafusion-substrait = { git = "https://github.com/spiceai/datafusion.git", folder = "datafusion/substrait", rev = "be2c2c1f74823956e609a23ca38657cd76c2fcfe" }
+datafusion = { git = "https://github.com/spiceai/datafusion.git", rev = "a155dee3293a5536ca5c5514f3e87884aa32e5ae" }
+datafusion-substrait = { git = "https://github.com/spiceai/datafusion.git", folder = "datafusion/substrait", rev = "a155dee3293a5536ca5c5514f3e87884aa32e5ae" }
