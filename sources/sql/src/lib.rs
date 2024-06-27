@@ -87,10 +87,6 @@ impl SQLFederationAnalyzerRule {
 
 impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
-        let mut known_rewrites = HashMap::new();
-        let plan = rewrite_table_scans(&plan, &mut known_rewrites)?;
-
         let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
         let ext_node = Extension {
             node: Arc::new(fed_plan),
@@ -631,6 +627,14 @@ impl VirtualExecutionPlan {
         let df_schema = self.plan.schema().as_ref();
         Arc::new(Schema::from(df_schema))
     }
+
+    fn sql(&self) -> Result<String> {
+        // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
+        let mut known_rewrites = HashMap::new();
+        let ast = Unparser::new(self.executor.dialect().as_ref())
+            .plan_to_sql(&rewrite_table_scans(&self.plan, &mut known_rewrites)?)?;
+        Ok(format!("{ast}"))
+    }
 }
 
 impl DisplayAs for VirtualExecutionPlan {
@@ -643,7 +647,12 @@ impl DisplayAs for VirtualExecutionPlan {
         if let Some(ctx) = self.executor.compute_context() {
             write!(f, " compute_context={ctx}")?;
         }
-        write!(f, " sql={ast}")
+        write!(f, " sql={ast}")?;
+        if let Ok(query) = self.sql() {
+            write!(f, " rewritten_sql={query}")?;
+        };
+
+        Ok(())
     }
 }
 
@@ -672,12 +681,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let dialect = self.executor.dialect();
-        let unparser = Unparser::new(dialect.as_ref());
-        let ast = unparser.plan_to_sql(&self.plan)?;
-        let query = format!("{ast}");
-
-        self.executor.execute(query.as_str(), self.schema())
+        self.executor.execute(self.sql()?.as_str(), self.schema())
     }
 
     fn properties(&self) -> &PlanProperties {

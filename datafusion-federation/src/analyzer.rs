@@ -7,6 +7,7 @@ use datafusion::{
     error::Result,
     logical_expr::{Expr, LogicalPlan, Projection, TableScan, TableSource},
     optimizer::analyzer::AnalyzerRule,
+    sql::TableReference,
 };
 
 use crate::{FederatedTableProviderAdaptor, FederatedTableSource, FederationProviderRef};
@@ -142,7 +143,18 @@ fn wrap_projection(plan: LogicalPlan) -> Result<LogicalPlan> {
                 .schema()
                 .fields()
                 .iter()
-                .map(|f| Expr::Column(Column::new_unqualified(f.name())))
+                .enumerate()
+                .map(|(i, f)| {
+                    Expr::Column(Column::from_qualified_name(format!(
+                        "{}.{}",
+                        plan.schema()
+                            .qualified_field(i)
+                            .0
+                            .map(TableReference::table)
+                            .unwrap_or_default(),
+                        f.name()
+                    )))
+                })
                 .collect::<Vec<Expr>>();
             Ok(LogicalPlan::Projection(Projection::try_new(
                 expr,
