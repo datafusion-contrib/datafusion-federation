@@ -713,6 +713,7 @@ mod tests {
     use datafusion_federation::FederatedTableProviderAdaptor;
 
     use super::*;
+    use pretty_assertions::assert_str_eq;
 
     struct TestSQLExecutor {}
 
@@ -971,7 +972,7 @@ mod tests {
         let before_optimization = r#"SELECT c_orders.c_count,
        Count(1) AS custdist
 FROM   (SELECT customer.c_custkey         AS c_custkey,
-               "count(orders.o_orderkey)" AS c_count
+               "COUNT(orders.o_orderkey)" AS c_count
         FROM   (SELECT customer.c_custkey,
                        Count(orders.o_orderkey)
                 FROM   customer
@@ -982,24 +983,9 @@ FROM   (SELECT customer.c_custkey         AS c_custkey,
                 GROUP  BY customer.c_custkey)) AS c_orders
 GROUP  BY c_orders.c_count
 ORDER  BY custdist DESC nulls first,
-          c_orders.c_count DESC nulls first "#;
-        let after_optimization = r#"SELECT c_orders.c_count,
-       Count(1) AS custdist
-FROM   (SELECT c_custkey                       AS c_custkey,
-               "count(tpch.orders.o_orderkey)" AS c_count
-        FROM   (SELECT tpch.customer.c_custkey,
-                       Count(tpch.orders.o_orderkey) AS
-                       "count(tpch.orders.o_orderkey)"
-                FROM   tpch.customer
-                       LEFT JOIN tpch.orders
-                              ON ( ( tpch.customer.c_custkey =
-                                     tpch.orders.o_custkey )
-                                   AND tpch.orders.o_comment NOT LIKE
-                                       '%special%requests%' )
-                GROUP  BY tpch.customer.c_custkey)) AS c_orders
-GROUP  BY c_orders.c_count
-ORDER  BY custdist DESC nulls first,
           c_orders.c_count DESC nulls first"#;
+        // Unfortunately plan-to-sql doesn't support formatting in Datafusion, so we need to join the string manually to create a one-line query
+        let after_optimization = r#"SELECT c_orders.c_count, Count(1) AS custdist FROM (SELECT c_custkey AS c_custkey, "count(tpch.orders.o_orderkey)" AS c_count FROM   (SELECT tpch.customer.c_custkey, Count(tpch.orders.o_orderkey) AS "count(tpch.orders.o_orderkey)" FROM tpch.customer LEFT JOIN tpch.orders ON ( ( tpch.customer.c_custkey =tpch.orders.o_custkey ) AND tpch.orders.o_comment NOT LIKE '%special%requests%' ) GROUP  BY tpch.customer.c_custkey)) AS c_orders GROUP  BY c_orders.c_count ORDER  BY custdist DESC nulls first, c_orders.c_count DESC nulls first"#;
         test_sql(&ctx, &before_optimization, &after_optimization).await?;    
         Ok(())   
     }
@@ -1022,7 +1008,7 @@ ORDER  BY custdist DESC nulls first,
 
         println!("unparsed_sql: \n{unparsed_sql}");
 
-        assert_eq!(
+        assert_str_eq!(
             format!("{unparsed_sql}"),
             expected_sql,
             "SQL under test: {}",
