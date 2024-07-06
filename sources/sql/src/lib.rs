@@ -118,8 +118,9 @@ fn rewrite_table_scans(
             match federated_source.as_any().downcast_ref::<SQLTableSource>() {
                 Some(sql_table_source) => {
                     let remote_table_name = TableReference::from(sql_table_source.table_name());
+                    println!("Rewriting table scan {:#?} to {:#?}",  original_table_name.clone(), remote_table_name.clone());
                     known_rewrites.insert(original_table_name, remote_table_name.clone());
-
+                    
                     // Rewrite the schema of this node to have the remote table as the qualifier.
                     let new_schema = (*new_table_scan.projected_schema)
                         .clone()
@@ -144,12 +145,13 @@ fn rewrite_table_scans(
         .into_iter()
         .map(|i| rewrite_table_scans(i, known_rewrites))
         .collect::<Result<Vec<_>>>()?;
-
+    println!("Rewriten inputs {:#?}",rewritten_inputs);
     let mut new_expressions = vec![];
     for expression in plan.expressions() {
         let new_expr = rewrite_table_scans_in_expr(expression.clone(), known_rewrites)?;
         new_expressions.push(new_expr);
     }
+    println!("Rewriten expr {:#?}",new_expressions.clone());
 
     let new_plan = plan.with_new_exprs(new_expressions, rewritten_inputs)?;
 
@@ -230,6 +232,7 @@ fn rewrite_table_scans_in_expr(
     expr: Expr,
     known_rewrites: &mut HashMap<TableReference, TableReference>,
 ) -> Result<Expr> {
+//    println!("Expr {:#?} rewrites {:#?}",expr);
     match expr {
         Expr::ScalarSubquery(subquery) => {
             let new_subquery = rewrite_table_scans(&subquery.subquery, known_rewrites)?;
@@ -436,7 +439,7 @@ fn rewrite_table_scans_in_expr(
                 .order_by
                 .map(|e| {
                     e.into_iter()
-                        .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
+                    .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                         .collect::<Result<Vec<Expr>>>()
                 })
                 .transpose()?;
@@ -631,8 +634,14 @@ impl VirtualExecutionPlan {
     fn sql(&self) -> Result<String> {
         // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
         let mut known_rewrites = HashMap::new();
+        let before =Unparser::new(self.executor.dialect().as_ref())
+        .plan_to_sql(&self.plan)?;
+        let sql = format!("{before}"); 
+        println!("Before Sql: {sql}"); 
         let ast = Unparser::new(self.executor.dialect().as_ref())
             .plan_to_sql(&rewrite_table_scans(&self.plan, &mut known_rewrites)?)?;
+        let sql = format!("{ast}"); 
+        println!("After rewrite Sql: {sql}");
         Ok(format!("{ast}"))
     }
 }
@@ -896,6 +905,103 @@ mod tests {
         }
 
         Ok(())
+    }
+    
+    fn get_test_table_provider_from_schema(schema: Arc<Schema>, table_name: String) -> Arc<dyn TableProvider> {
+        let sql_federation_provider =
+            Arc::new(SQLFederationProvider::new(Arc::new(TestSQLExecutor {})));
+
+        let table_source = Arc::new(
+            SQLTableSource::new_with_schema(
+                sql_federation_provider,
+                table_name,
+                schema,
+            )
+            .expect("to have a valid SQLTableSource"),
+        );
+        Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+    fn get_tpch_customers_table_provider() ->  Arc<dyn TableProvider> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("c_custkey", DataType::Utf8, false),
+            Field::new("custdist", DataType::Utf8, true),
+        ]));
+        get_test_table_provider_from_schema(schema, "tpch.customers".to_string())
+    }
+
+
+    fn get_tpch_orders_table_provider() -> Arc<dyn TableProvider>{
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("o_orderkey", DataType::Utf8, false),
+            Field::new("o_custkey", DataType::Utf8, false),
+            Field::new("o_comment", DataType::Utf8, true),
+        ]));
+        get_test_table_provider_from_schema(schema, "tpch.orders".to_string())
+    }
+    fn get_test_tpchl_context() -> SessionContext {
+        let ctx = SessionContext::new();
+        let catalog = ctx
+            .catalog("datafusion")
+            .expect("default catalog is datafusion");
+        let tpch_schema= Arc::new(MemorySchemaProvider::new()) as Arc<dyn SchemaProvider>;
+        catalog
+            .register_schema("tpch", Arc::clone(&tpch_schema))
+            .expect("to register schema");
+        tpch_schema
+            .register_table("orders".to_string(), get_tpch_orders_table_provider())
+            .expect("to register table");
+        tpch_schema.
+            register_table("customers".to_string(),get_tpch_customers_table_provider())
+            .expect("to register table");
+        let public_schema = catalog
+            .schema("public")
+            .expect("public schema should exist");
+        public_schema
+            .register_table("orders".to_string(), get_tpch_orders_table_provider())
+            .expect("to register table");
+        public_schema
+            .register_table("customer".to_string(), get_tpch_customers_table_provider())
+            .expect("to register table");
+        ctx
+    }
+    #[tokio::test]
+    async fn test_subquery_rewriet() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_tpchl_context();
+        let before_optimization = r#"SELECT c_orders.c_count,
+       Count(1) AS custdist
+FROM   (SELECT customer.c_custkey         AS c_custkey,
+               "count(orders.o_orderkey)" AS c_count
+        FROM   (SELECT customer.c_custkey,
+                       Count(orders.o_orderkey)
+                FROM   customer
+                       LEFT JOIN orders
+                              ON ( ( customer.c_custkey = orders.o_custkey )
+                                   AND orders.o_comment NOT LIKE
+                                       '%special%requests%' )
+                GROUP  BY customer.c_custkey)) AS c_orders
+GROUP  BY c_orders.c_count
+ORDER  BY custdist DESC nulls first,
+          c_orders.c_count DESC nulls first "#;
+        let after_optimization = r#"SELECT c_orders.c_count,
+       Count(1) AS custdist
+FROM   (SELECT c_custkey                       AS c_custkey,
+               "count(tpch.orders.o_orderkey)" AS c_count
+        FROM   (SELECT tpch.customer.c_custkey,
+                       Count(tpch.orders.o_orderkey) AS
+                       "count(tpch.orders.o_orderkey)"
+                FROM   tpch.customer
+                       LEFT JOIN tpch.orders
+                              ON ( ( tpch.customer.c_custkey =
+                                     tpch.orders.o_custkey )
+                                   AND tpch.orders.o_comment NOT LIKE
+                                       '%special%requests%' )
+                GROUP  BY tpch.customer.c_custkey)) AS c_orders
+GROUP  BY c_orders.c_count
+ORDER  BY custdist DESC nulls first,
+          c_orders.c_count DESC nulls first"#;
+        test_sql(&ctx, &before_optimization, &after_optimization).await?;    
+        Ok(())   
     }
 
     async fn test_sql(
