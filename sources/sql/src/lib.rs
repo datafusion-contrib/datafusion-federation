@@ -256,6 +256,12 @@ fn rewrite_table_scans_in_expr(
             if let Some(rewrite) = col.relation.as_ref().and_then(|r| known_rewrites.get(r)) {
                 Ok(Expr::Column(Column::new(Some(rewrite.clone()), &col.name)))
             } else {
+                // This prevent over-eager rewrite and only pass the column into below rewritten
+                // rule like MAX(...)
+                if col.relation.is_some() {
+                    return Ok(Expr::Column(col));
+                }
+
                 // Check if any of the rewrites match any substring in col.name, and replace that part of the string if so.
                 // This will handles cases like "MAX(foo.df_table.a)" -> "MAX(remote_table.a)"
                 let (new_name, was_rewritten) = known_rewrites.iter().fold(
@@ -834,34 +840,50 @@ mod tests {
                 r#"SELECT MAX(remote_table.a) FROM remote_table"#,
             ),
             (
+                "SELECT foo.df_table.a FROM foo.df_table",
+                r#"SELECT remote_table.a FROM remote_table"#,
+            ),
+            (
                 "SELECT MIN(a) FROM foo.df_table",
                 r#"SELECT MIN(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT AVG(a) FROM foo.df_table",
-                r#"SELECT AVG(remote_table.a) FROM remote_table"#,
+                r#"SELECT avg(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT SUM(a) FROM foo.df_table",
-                r#"SELECT SUM(remote_table.a) FROM remote_table"#,
+                r#"SELECT sum(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT COUNT(a) FROM foo.df_table",
-                r#"SELECT COUNT(remote_table.a) FROM remote_table"#,
+                r#"SELECT count(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT COUNT(a) as cnt FROM foo.df_table",
-                r#"SELECT COUNT(remote_table.a) AS cnt FROM remote_table"#,
+                r#"SELECT count(remote_table.a) AS cnt FROM remote_table"#,
+            ),
+            (
+                "SELECT COUNT(a) as cnt FROM foo.df_table",
+                r#"SELECT count(remote_table.a) AS cnt FROM remote_table"#,
+            ),
+            (
+                "SELECT app_table from (SELECT a as app_table FROM app_table) b",
+                r#"SELECT b.app_table FROM (SELECT remote_table.a AS app_table FROM remote_table) AS b"#,
+            ),
+            (
+                "SELECT MAX(app_table) from (SELECT a as app_table FROM app_table) b",
+                r#"SELECT MAX(b.app_table) FROM (SELECT remote_table.a AS app_table FROM remote_table) AS b"#,
             ),
             // multiple occurrences of the same table in single aggregation expression
             (
                 "SELECT COUNT(CASE WHEN a > 0 THEN a ELSE 0 END) FROM app_table",
-                r#"SELECT COUNT(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE 0 END) FROM remote_table"#,
+                r#"SELECT count(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE 0 END) FROM remote_table"#,
             ),
             // different tables in single aggregation expression
             (
                 "SELECT COUNT(CASE WHEN app_table.a > 0 THEN app_table.a ELSE foo.df_table.a END) FROM app_table, foo.df_table",
-                r#"SELECT COUNT(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE remote_table.a END) FROM remote_table JOIN remote_table ON true"#,
+                r#"SELECT count(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE remote_table.a END) FROM remote_table JOIN remote_table ON true"#,
             ),
         ];
 
@@ -880,7 +902,7 @@ mod tests {
         let tests = vec![
             (
                 "SELECT COUNT(app_table_a) FROM (SELECT a as app_table_a FROM app_table)",
-                r#"SELECT COUNT(app_table_a) FROM (SELECT remote_table.a AS app_table_a FROM remote_table)"#,
+                r#"SELECT count(app_table_a) FROM (SELECT remote_table.a AS app_table_a FROM remote_table)"#,
             ),
             (
                 "SELECT app_table_a FROM (SELECT a as app_table_a FROM app_table)",
