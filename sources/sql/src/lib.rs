@@ -517,12 +517,9 @@ fn rewrite_table_scans_in_expr(
             )))
         }
         Expr::Wildcard { qualifier } => {
-            if let Some(rewrite) = qualifier
-                .as_ref()
-                .and_then(|q| known_rewrites.get(&TableReference::from(q)))
-            {
+            if let Some(rewrite) = qualifier.as_ref().and_then(|q| known_rewrites.get(q)) {
                 Ok(Expr::Wildcard {
-                    qualifier: Some(rewrite.clone().to_string()),
+                    qualifier: Some(rewrite.clone()),
                 })
             } else {
                 Ok(Expr::Wildcard { qualifier })
@@ -657,6 +654,10 @@ impl DisplayAs for VirtualExecutionPlan {
 }
 
 impl ExecutionPlan for VirtualExecutionPlan {
+    fn name(&self) -> &str {
+        "VirtualExecutionPlan"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
