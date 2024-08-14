@@ -447,7 +447,7 @@ fn rewrite_table_scans_in_expr(
                 })
                 .transpose()?;
             Ok(Expr::AggregateFunction(AggregateFunction {
-                func_def: af.func_def,
+                func: af.func,
                 args,
                 distinct: af.distinct,
                 filter,
@@ -471,14 +471,14 @@ fn rewrite_table_scans_in_expr(
                 .into_iter()
                 .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                 .collect::<Result<Vec<Expr>>>()?;
-            Ok(Expr::WindowFunction(WindowFunction::new(
-                wf.fun,
+            Ok(Expr::WindowFunction(WindowFunction {
+                fun: wf.fun,
                 args,
                 partition_by,
                 order_by,
-                wf.window_frame,
-                wf.null_treatment,
-            )))
+                window_frame: wf.window_frame,
+                null_treatment: wf.null_treatment,
+            }))
         }
         Expr::InList(il) => {
             let expr = rewrite_table_scans_in_expr(*il.expr, known_rewrites)?;
@@ -700,7 +700,8 @@ impl ExecutionPlan for VirtualExecutionPlan {
 mod tests {
     use datafusion::{
         arrow::datatypes::{DataType, Field},
-        catalog::schema::{MemorySchemaProvider, SchemaProvider},
+        catalog::SchemaProvider,
+        catalog_common::MemorySchemaProvider,
         common::Column,
         datasource::{DefaultTableSource, TableProvider},
         error::DataFusionError,
