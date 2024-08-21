@@ -65,6 +65,14 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
             planner: self.planner.clone(),
         }
     }
+
+    /// XXX should consider something else here ?
+    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, _inputs: Vec<LogicalPlan>) -> Result<Self> {
+        Ok(Self {
+            plan: self.plan.clone(),
+            planner: self.planner.clone(),
+        })
+    }
 }
 
 #[derive(Default)]

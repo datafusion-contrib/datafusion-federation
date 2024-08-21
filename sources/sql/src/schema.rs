@@ -2,8 +2,7 @@ use async_trait::async_trait;
 
 use datafusion::logical_expr::{TableSource, TableType};
 use datafusion::{
-    arrow::datatypes::SchemaRef, catalog::schema::SchemaProvider, datasource::TableProvider,
-    error::Result,
+    arrow::datatypes::SchemaRef, catalog::SchemaProvider, datasource::TableProvider, error::Result,
 };
 use futures::future::join_all;
 use std::{any::Any, sync::Arc};

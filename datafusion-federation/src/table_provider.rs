@@ -3,10 +3,10 @@ use std::{any::Any, sync::Arc};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::SchemaRef,
+    catalog::Session,
     common::Constraints,
     datasource::TableProvider,
     error::{DataFusionError, Result},
-    execution::context::SessionState,
     logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType},
     physical_plan::ExecutionPlan,
 };
@@ -106,7 +106,7 @@ impl TableProvider for FederatedTableProviderAdaptor {
     // with a virtual TableProvider that provides federation for a sub-plan.
     async fn scan(
         &self,
-        state: &SessionState,
+        state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         limit: Option<usize>,
@@ -122,7 +122,7 @@ impl TableProvider for FederatedTableProviderAdaptor {
 
     async fn insert_into(
         &self,
-        _state: &SessionState,
+        _state: &dyn Session,
         input: Arc<dyn ExecutionPlan>,
         overwrite: bool,
     ) -> Result<Arc<dyn ExecutionPlan>> {
