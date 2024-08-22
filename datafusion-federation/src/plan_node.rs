@@ -121,7 +121,7 @@ impl Hash for FederatedPlanNode {
 }
 
 #[derive(Default)]
-struct FederatedPlanner {}
+pub struct FederatedPlanner {}
 
 impl FederatedPlanner {
     pub fn new() -> Self {
