@@ -162,6 +162,10 @@ impl DisplayAs for VirtualExecutionPlan {
 }
 
 impl ExecutionPlan for VirtualExecutionPlan {
+    fn name(&self) -> &str {
+        "sql_federation_exec"
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -170,7 +174,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         self.schema()
     }
 
-    fn children(&self) -> Vec<Arc<dyn ExecutionPlan>> {
+    fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {
         vec![]
     }
 

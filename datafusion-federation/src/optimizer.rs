@@ -258,7 +258,7 @@ impl FederationOptimizerRule {
             };
 
             // If this is the root plan node; federate the entire plan
-            let optimized = optimizer.optimize(plan, _config, |_, _| {})?;
+            let optimized = optimizer.optimize(plan.clone(), _config, |_, _| {})?;
             return Ok((Some(optimized), ScanResult::None));
         }
 
@@ -296,7 +296,7 @@ impl FederationOptimizerRule {
 
                 // Replace the input with the federated counterpart
                 let wrapped = wrap_projection(original_input)?;
-                let optimized = optimizer.optimize(&wrapped, _config, |_, _| {})?;
+                let optimized = optimizer.optimize(wrapped, _config, |_, _| {})?;
 
                 Ok(optimized)
             })
@@ -398,9 +398,9 @@ fn wrap_projection(plan: LogicalPlan) -> Result<LogicalPlan> {
         _ => {
             let expr = plan
                 .schema()
-                .fields()
+                .columns()
                 .iter()
-                .map(|f| Expr::Column(f.qualified_column()))
+                .map(|c| Expr::Column(c.clone()))
                 .collect::<Vec<Expr>>();
             Ok(LogicalPlan::Projection(Projection::try_new(
                 expr,

@@ -53,6 +53,7 @@ impl SQLExecutor for CXExecutor {
     fn compute_context(&self) -> Option<String> {
         Some(self.context.clone())
     }
+
     fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
         let conn = self.conn.clone();
         let query: CXQuery = sql.into();
