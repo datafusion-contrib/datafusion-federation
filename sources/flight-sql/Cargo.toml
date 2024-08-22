@@ -3,7 +3,6 @@ name = "datafusion-federation-flight-sql"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-readme.workspace = true
 
 [lib]
 name = "datafusion_federation_flight_sql"
@@ -13,11 +12,14 @@ path = "src/lib.rs"
 async-trait.workspace = true
 datafusion.workspace = true
 datafusion-substrait.workspace = true
+
+# XXX use the release verion on crates.io 
 datafusion-federation.path = "../../datafusion-federation"
 datafusion-federation-sql.path = "../sql"
+
 futures = "0.3.30"
-tonic = {version="0.11.0", features=["tls"] }
-prost = "0.12.3"
-arrow = "51.0.0"
-arrow-flight = { version = "51.0.0", features = ["flight-sql-experimental"] }
-log = "0.4.20"
+tonic = {version="0.12.0", features=["tls"] }
+prost = "0.13"
+arrow = "52.0.0"
+arrow-flight = { version = "52.0.0", features = ["flight-sql-experimental"] }
+log = "0.4.22"

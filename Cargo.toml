@@ -3,14 +3,9 @@ resolver = "2"
 
 members = [
     "datafusion-federation",
-    "examples",
     "sources/sql",
     "sources/flight-sql",
 ]
-
-[patch.crates-io]
-# connectorx = { path = "../connector-x/connectorx" }
-# datafusion = { path = "../arrow-datafusion/datafusion/core" }
 
 [workspace.package]
 version = "0.1.3"
@@ -18,8 +13,7 @@ edition = "2021"
 license = "MIT"
 readme = "README.md"
 
-
 [workspace.dependencies]
-async-trait = "0.1.77"
-datafusion = "37.0.0"
-datafusion-substrait = "37.0.0"
+async-trait = "0.1.81"
+datafusion = "41.0.0"
+datafusion-substrait = "41.0.0"
