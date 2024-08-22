@@ -20,7 +20,6 @@ use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProv
 mod schema;
 pub use schema::*;
 
-pub mod connectorx;
 mod executor;
 pub use executor::*;
 
