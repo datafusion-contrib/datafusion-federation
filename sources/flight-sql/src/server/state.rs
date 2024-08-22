@@ -1,9 +1,10 @@
+use std::fmt::Display;
+
 use arrow_flight::{
     error::FlightError,
     sql::{self, Any, Command},
 };
 use prost::{bytes::Bytes, Message};
-use std::fmt::Display;
 
 pub type Result<T, E = FlightError> = std::result::Result<T, E>;
 

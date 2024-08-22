@@ -23,3 +23,4 @@ prost = "0.12.3"
 arrow = "52.0.0"
 arrow-flight = { version = "52.0.0", features = ["flight-sql-experimental"] }
 log = "0.4.20"
+
