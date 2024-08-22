@@ -18,8 +18,8 @@ datafusion-federation.path = "../../datafusion-federation"
 datafusion-federation-sql.path = "../sql"
 
 futures = "0.3.30"
-tonic = {version="0.12.0", features=["tls"] }
-prost = "0.13"
+tonic = {version="0.11.0", features=["tls", "transport", "codegen", "prost"] }
+prost = "0.12.3"
 arrow = "52.0.0"
-arrow-flight = { version = "52.0.0", features = ["flight-sql-experimental"] }
+arrow-flight = { version = "52.2.0", features = ["flight-sql-experimental"] }
 log = "0.4.22"
