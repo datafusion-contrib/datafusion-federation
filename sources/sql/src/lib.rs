@@ -59,7 +59,6 @@ impl FederationProvider for SQLFederationProvider {
         self.executor.compute_context()
     }
 
-
     fn optimizer(&self) -> Option<Arc<Optimizer>> {
         Some(self.optimizer.clone())
     }

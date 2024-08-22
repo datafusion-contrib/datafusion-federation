@@ -5,7 +5,7 @@ use std::{
 };
 
 use datafusion::{
-    execution::context::{SessionContext, SessionState},
+    execution::session_state::{SessionState, SessionStateBuilder},
     optimizer::{optimizer::Optimizer, OptimizerRule},
 };
 
@@ -19,12 +19,11 @@ pub use plan_node::*;
 pub mod schema_cast;
 
 pub fn default_session_state() -> SessionState {
-    let df_state = SessionContext::new().state();
-
     let rules = default_optimizer_rules();
-    df_state
+    SessionStateBuilder::new()
         .with_optimizer_rules(rules)
         .with_query_planner(Arc::new(FederatedQueryPlanner::new()))
+        .build()
 }
 
 pub fn default_optimizer_rules() -> Vec<Arc<dyn OptimizerRule + Send + Sync>> {
