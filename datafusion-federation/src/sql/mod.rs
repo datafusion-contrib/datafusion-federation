@@ -3,7 +3,6 @@ mod schema;
 
 use std::{any::Any, fmt, sync::Arc, vec};
 
-use crate::{FederatedPlanNode, FederationPlanner, FederationProvider};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
@@ -21,6 +20,8 @@ use datafusion::{
 
 pub use executor::{SQLExecutor, SQLExecutorRef};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
+
+use crate::{FederatedPlanNode, FederationPlanner, FederationProvider};
 
 // #[macro_use]
 // extern crate derive_builder;
