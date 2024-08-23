@@ -35,6 +35,12 @@ impl OptimizerRule for FederationOptimizerRule {
     fn name(&self) -> &str {
         "federation_optimizer_rule"
     }
+
+    /// XXX
+    /// Does this rule support rewriting owned plans (rather than by reference)?
+    fn supports_rewrite(&self) -> bool {
+        false
+    }
 }
 
 enum ScanResult {
