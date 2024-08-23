@@ -55,7 +55,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo clippy -- -Dwarnings
+      - run: cargo clippy -- -D warnings
 
   package:
     name: Package
@@ -69,5 +69,5 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo build
+      - run: cargo build --all 
       - run: cargo package -p datafusion-federation --allow-dirty
