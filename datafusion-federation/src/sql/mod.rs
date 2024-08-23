@@ -1,6 +1,9 @@
-use core::fmt;
-use std::{any::Any, sync::Arc, vec};
+mod executor;
+mod schema;
 
+use std::{any::Any, fmt, sync::Arc, vec};
+
+use crate::{FederatedPlanNode, FederationPlanner, FederationProvider};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
@@ -15,13 +18,9 @@ use datafusion::{
     },
     sql::unparser::plan_to_sql,
 };
-use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
 
-mod schema;
-pub use schema::*;
-
-mod executor;
-pub use executor::*;
+pub use executor::{SQLExecutor, SQLExecutorRef};
+pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
 
 // #[macro_use]
 // extern crate derive_builder;
