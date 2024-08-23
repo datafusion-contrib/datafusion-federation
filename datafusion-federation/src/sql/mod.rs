@@ -106,6 +106,12 @@ impl OptimizerRule for SQLFederationOptimizerRule {
     fn name(&self) -> &str {
         "federate_sql"
     }
+
+    /// XXX
+    /// Does this rule support rewriting owned plans (rather than by reference)?
+    fn supports_rewrite(&self) -> bool {
+        false
+    }
 }
 
 /// Rewrite table scans to use the original federated table name.
