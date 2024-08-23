@@ -1,5 +1,11 @@
-use core::fmt;
+mod optimizer;
+mod plan_node;
+mod table_provider;
+#[cfg(feature = "sql")]
+pub mod sql;
+
 use std::{
+    fmt,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -9,13 +15,10 @@ use datafusion::{
     optimizer::{optimizer::Optimizer, OptimizerRule},
 };
 
-mod optimizer;
-pub use optimizer::*;
-mod table_provider;
-pub use table_provider::*;
 
-mod plan_node;
-pub use plan_node::*;
+pub use optimizer::{get_table_source, FederationOptimizerRule};
+pub use plan_node::{FederatedPlanNode, FederatedQueryPlanner, FederationPlanner};
+pub use table_provider::{FederatedTableProviderAdaptor, FederatedTableSource};
 pub mod schema_cast;
 
 pub fn default_session_state() -> SessionState {

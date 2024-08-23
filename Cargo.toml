@@ -3,8 +3,7 @@ resolver = "2"
 
 members = [
     "datafusion-federation",
-    "sources/sql",
-    "sources/flight-sql",
+    # "sources/flight-sql",
 ]
 
 [workspace.package]

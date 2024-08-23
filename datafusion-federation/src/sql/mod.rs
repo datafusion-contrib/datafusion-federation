@@ -1,6 +1,10 @@
+mod executor;
+mod schema;
+
 use core::fmt;
 use std::{any::Any, collections::HashMap, sync::Arc, vec};
 
+use crate::{FederatedPlanNode, FederationPlanner, FederationProvider};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
@@ -22,14 +26,14 @@ use datafusion_federation::{
     get_table_source, schema_cast, FederatedPlanNode, FederationPlanner, FederationProvider,
 };
 
-mod schema;
-pub use schema::*;
+
 
 #[cfg(feature = "connectorx")]
 pub mod connectorx;
 
-mod executor;
-pub use executor::*;
+
+pub use executor::{SQLExecutor, SQLExecutorRef};
+pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
 
 // #[macro_use]
 // extern crate derive_builder;

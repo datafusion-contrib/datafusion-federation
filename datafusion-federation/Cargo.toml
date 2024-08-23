@@ -10,12 +10,17 @@ description = "Datafusion federation."
 name = "datafusion_federation"
 path = "src/lib.rs"
 
+[features]
+sql = ["futures"]
+
 [dependencies]
 async-trait.workspace = true
 datafusion.workspace = true
 async-stream.workspace = true
 futures.workspace = true
 arrow-json.workspace = true
+
+futures = { version = "0.3.30", optional = true }
 
 [package.metadata.docs.rs]
 
