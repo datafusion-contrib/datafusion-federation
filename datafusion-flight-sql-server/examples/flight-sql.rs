@@ -2,15 +2,16 @@ use std::{sync::Arc, time::Duration};
 
 use arrow_flight::sql::client::FlightSqlServiceClient;
 use datafusion::{
-    catalog::schema::SchemaProvider,
+    catalog::SchemaProvider,
     error::{DataFusionError, Result},
     execution::{
         context::{SessionContext, SessionState},
         options::CsvReadOptions,
     },
 };
-use datafusion_federation_flight_sql::{executor::FlightSQLExecutor, server::FlightSqlService};
-use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
+use datafusion_federation::sql::{SQLFederationProvider, SQLSchemaProvider};
+use datafusion_flight_sql_server::service::FlightSqlService;
+use datafusion_flight_sql_table_provider::FlightSQLExecutor;
 use tokio::time::sleep;
 use tonic::transport::Endpoint;
 
@@ -19,11 +20,7 @@ async fn main() -> Result<()> {
     let dsn: String = "0.0.0.0:50051".to_string();
     let remote_ctx = SessionContext::new();
     remote_ctx
-        .register_csv(
-            "test",
-            "./examples/examples/test.csv",
-            CsvReadOptions::new(),
-        )
+        .register_csv("test", "./examples/test.csv", CsvReadOptions::new())
         .await?;
 
     // Remote context
