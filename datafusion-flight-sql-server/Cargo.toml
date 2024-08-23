@@ -1,24 +1,29 @@
 [package]
-name = "datafusion-federation-flight-sql"
+name = "datafusion-flight-sql-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "datafusion_federation_flight_sql"
+name = "datafusion_flight_sql_server"
 path = "src/lib.rs"
 
 [dependencies]
 async-trait.workspace = true
 datafusion.workspace = true
 datafusion-substrait.workspace = true
-
 # XXX use the release verion on crates.io 
-datafusion-federation.path = "../../datafusion-federation"
-datafusion-federation-sql.path = "../sql"
+datafusion-federation = { path = "../datafusion-federation", features = [
+    "sql",
+] }
 
 futures = "0.3.30"
-tonic = {version="0.11.0", features=["tls"] }
+tonic = { version = "0.11.0", features = [
+    "tls",
+    "transport",
+    "codegen",
+    "prost",
+] }
 prost = "0.12.3"
 arrow = "52.0.0"
 arrow-flight = { version = "52.0.0", features = ["flight-sql-experimental"] }
