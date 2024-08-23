@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "datafusion-federation",
     "datafusion-flight-sql-server",
+    "datafusion-flight-sql-table-provider",
 ]
 
 [workspace.package]

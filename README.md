@@ -5,6 +5,9 @@
 
 The goal of this repo is to allow [DataFusion](https://github.com/apache/arrow-datafusion) to resolve queries across remote query engines while pushing down as much compute as possible down.
 
+
+> :warning: **All the examples are deprecated for now**
+
 Check out [the examples](./examples/) to get a feel for how it works.
 
 Potential use-cases:
