@@ -1,8 +1,8 @@
 mod optimizer;
 mod plan_node;
-mod table_provider;
 #[cfg(feature = "sql")]
 pub mod sql;
+mod table_provider;
 
 use std::{
     fmt,
