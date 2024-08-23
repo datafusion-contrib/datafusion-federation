@@ -1,5 +1,4 @@
-use std::pin::Pin;
-use std::sync::Arc;
+use std::{pin::Pin, sync::Arc};
 
 use arrow::{datatypes::SchemaRef, error::ArrowError, ipc::writer::IpcWriteOptions};
 use arrow_flight::sql::{
@@ -40,8 +39,8 @@ use prost::bytes::Bytes;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
+use super::session::{SessionStateProvider, StaticSessionStateProvider};
 use super::state::{CommandTicket, QueryHandle};
-use super::{SessionStateProvider, StaticSessionStateProvider};
 
 type Result<T, E = Status> = std::result::Result<T, E>;
 
