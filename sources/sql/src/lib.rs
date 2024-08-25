@@ -838,7 +838,7 @@ mod tests {
         let agg_tests = vec![
             (
                 "SELECT MAX(a) FROM foo.df_table",
-                r#"SELECT MAX(remote_table.a) FROM remote_table"#,
+                r#"SELECT max(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT foo.df_table.a FROM foo.df_table",
@@ -846,7 +846,7 @@ mod tests {
             ),
             (
                 "SELECT MIN(a) FROM foo.df_table",
-                r#"SELECT MIN(remote_table.a) FROM remote_table"#,
+                r#"SELECT min(remote_table.a) FROM remote_table"#,
             ),
             (
                 "SELECT AVG(a) FROM foo.df_table",
@@ -874,7 +874,7 @@ mod tests {
             ),
             (
                 "SELECT MAX(app_table) from (SELECT a as app_table FROM app_table) b",
-                r#"SELECT MAX(b.app_table) FROM (SELECT remote_table.a AS app_table FROM remote_table) AS b"#,
+                r#"SELECT max(b.app_table) FROM (SELECT remote_table.a AS app_table FROM remote_table) AS b"#,
             ),
             // multiple occurrences of the same table in single aggregation expression
             (

@@ -1,12 +1,15 @@
 use datafusion::arrow::{
     array::{Array, RecordBatch},
     compute::cast,
-    datatypes::{DataType, SchemaRef},
+    datatypes::{DataType, IntervalUnit, SchemaRef},
 };
 use std::sync::Arc;
 
-use super::lists_cast::{
-    cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list,
+use super::{
+    intervals_cast::{
+        cast_interval_monthdaynano_to_daytime, cast_interval_monthdaynano_to_yearmonth,
+    },
+    lists_cast::{cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list},
 };
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -64,25 +67,33 @@ pub fn try_cast_to(record_batch: RecordBatch, expected_schema: SchemaRef) -> Res
 
             match (record_batch_col.data_type(), expected_field.data_type()) {
                 (DataType::Utf8, DataType::List(item_type)) => {
-                    return cast_string_to_list(&Arc::clone(record_batch_col), item_type)
-                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e });
+                    cast_string_to_list(&Arc::clone(record_batch_col), item_type)
+                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
                 }
                 (DataType::Utf8, DataType::LargeList(item_type)) => {
-                    return cast_string_to_large_list(&Arc::clone(record_batch_col), item_type)
-                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e });
+                    cast_string_to_large_list(&Arc::clone(record_batch_col), item_type)
+                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
                 }
                 (DataType::Utf8, DataType::FixedSizeList(item_type, value_length)) => {
-                    return cast_string_to_fixed_size_list(
+                    cast_string_to_fixed_size_list(
                         &Arc::clone(record_batch_col),
                         item_type,
                         value_length.clone(),
                     )
-                    .map_err(|e| Error::UnableToConvertRecordBatch { source: e });
+                    .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
                 }
-                _ => {
-                    return cast(&Arc::clone(record_batch_col), expected_field.data_type())
-                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e });
-                }
+                (
+                    DataType::Interval(IntervalUnit::MonthDayNano),
+                    DataType::Interval(IntervalUnit::YearMonth),
+                ) => cast_interval_monthdaynano_to_yearmonth(&Arc::clone(record_batch_col))
+                    .map_err(|e| Error::UnableToConvertRecordBatch { source: e }),
+                (
+                    DataType::Interval(IntervalUnit::MonthDayNano),
+                    DataType::Interval(IntervalUnit::DayTime),
+                ) => cast_interval_monthdaynano_to_daytime(&Arc::clone(record_batch_col))
+                    .map_err(|e| Error::UnableToConvertRecordBatch { source: e }),
+                _ => cast(&Arc::clone(record_batch_col), expected_field.data_type())
+                    .map_err(|e| Error::UnableToConvertRecordBatch { source: e }),
             }
         })
         .collect::<Result<Vec<Arc<dyn Array>>>>()?;
