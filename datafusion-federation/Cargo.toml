@@ -15,6 +15,7 @@ async-trait.workspace = true
 datafusion.workspace = true
 async-stream.workspace = true
 futures.workspace = true
+arrow-json.workspace = true
 
 [package.metadata.docs.rs]
 

@@ -12,7 +12,8 @@ use std::clone::Clone;
 use std::fmt;
 use std::sync::Arc;
 
-mod record_convert;
+pub mod record_convert;
+mod lists_cast;
 
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
