@@ -1,7 +1,7 @@
 use datafusion::arrow::{
     array::{Array, RecordBatch},
     compute::cast,
-    datatypes::{DataType, IntervalUnit, SchemaRef},
+    datatypes::{DataType, IntervalUnit, SchemaRef}
 };
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use super::{
     intervals_cast::{
         cast_interval_monthdaynano_to_daytime, cast_interval_monthdaynano_to_yearmonth,
     },
-    lists_cast::{cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list},
+    lists_cast::{cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list}, struct_cast::cast_string_to_struct,
 };
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -78,9 +78,13 @@ pub fn try_cast_to(record_batch: RecordBatch, expected_schema: SchemaRef) -> Res
                     cast_string_to_fixed_size_list(
                         &Arc::clone(record_batch_col),
                         item_type,
-                        value_length.clone(),
+                        *value_length,
                     )
                     .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
+                }
+                (DataType::Utf8, DataType::Struct(_)) => {
+                    cast_string_to_struct(&Arc::clone(record_batch_col), expected_field.clone())
+                        .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
                 }
                 (
                     DataType::Interval(IntervalUnit::MonthDayNano),

@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 mod intervals_cast;
 mod lists_cast;
+mod struct_cast;
 pub mod record_convert;
 
 #[derive(Debug)]
