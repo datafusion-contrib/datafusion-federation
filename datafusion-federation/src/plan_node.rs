@@ -8,7 +8,7 @@ use std::{
 use async_trait::async_trait;
 use datafusion::{
     common::DFSchemaRef,
-    error::Result,
+    error::{DataFusionError, Result},
     execution::context::{QueryPlanner, SessionState},
     logical_expr::{Expr, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore},
     physical_plan::ExecutionPlan,
@@ -58,16 +58,13 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
     }
 
     fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Result<Self> {
-        assert_eq!(inputs.len(), 0, "input size inconsistent");
-        assert_eq!(exprs.len(), 0, "expression size inconsistent");
-        Ok(Self {
-            plan: self.plan.clone(),
-            planner: Arc::clone(&self.planner),
-        })
-    }
+        if !inputs.is_empty() {
+            return Err(DataFusionError::Plan("input size inconsistent".into()));
+        }
+        if !exprs.is_empty() {
+            return Err(DataFusionError::Plan("expression size inconsistent".into()));
+        }
 
-    /// XXX should consider something else here ?
-    fn with_exprs_and_inputs(&self, _exprs: Vec<Expr>, _inputs: Vec<LogicalPlan>) -> Result<Self> {
         Ok(Self {
             plan: self.plan.clone(),
             planner: self.planner.clone(),
@@ -149,8 +146,11 @@ impl ExtensionPlanner for FederatedPlanner {
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let dc_node = node.as_any().downcast_ref::<FederatedPlanNode>();
         if let Some(fed_node) = dc_node {
-            assert_eq!(logical_inputs.len(), 0, "Inconsistent number of inputs");
-            assert_eq!(physical_inputs.len(), 0, "Inconsistent number of inputs");
+            if !logical_inputs.is_empty() || !physical_inputs.is_empty() {
+                return Err(DataFusionError::Plan(
+                    "Inconsistent number of inputs".into(),
+                ));
+            }
 
             let fed_planner = Arc::clone(&fed_node.planner);
             let exec_plan = fed_planner.plan_federation(fed_node, session_state).await?;
