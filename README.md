@@ -26,9 +26,8 @@ referred to as 'query federation'.
 
 ## Usage
 
-> :warning: **All the examples are deprecated for now**
-
-Check out [the examples](./examples/) to get a feel for how it works.
+Check out the [examples](./datafusion-federation/examples/) to get a feel for
+how it works.
 
 ## Potential use-cases:
 

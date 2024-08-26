@@ -10,6 +10,12 @@ description = "Datafusion federation."
 name = "datafusion_federation"
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+# Whether to pass `--all-features` to Cargo (default: false)
+all-features = true
+# Whether to pass `--no-default-features` to Cargo (default: false)
+no-default-features = true
+
 [features]
 sql = ["futures"]
 
@@ -22,10 +28,10 @@ arrow-json.workspace = true
 
 futures = { version = "0.3.30", optional = true }
 
-[package.metadata.docs.rs]
+[dev-dependencies]
+tokio = { version = "1.39.3", features = ["full"] }
 
-# Whether to pass `--all-features` to Cargo (default: false)
-all-features = true
-
-# Whether to pass `--no-default-features` to Cargo (default: false)
-no-default-features = true
+[[example]]
+name = "df-csv"
+path = "examples/df-csv.rs"
+required-features = ["sql"]
