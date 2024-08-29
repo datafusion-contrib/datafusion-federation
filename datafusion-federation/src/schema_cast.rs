@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 mod intervals_cast;
 mod lists_cast;
-mod struct_cast;
 pub mod record_convert;
+mod struct_cast;
 
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]

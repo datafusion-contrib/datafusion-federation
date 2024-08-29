@@ -2,16 +2,16 @@ use std::{sync::Arc, time::Duration};
 
 use arrow_flight::sql::client::FlightSqlServiceClient;
 use datafusion::{
-    catalog::schema::SchemaProvider,
+    catalog::SchemaProvider,
     error::{DataFusionError, Result},
     execution::{
         context::{SessionContext, SessionState},
         options::CsvReadOptions,
     },
 };
-use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
-use datafusion_federation_flight_sql::{executor::FlightSQLExecutor, server::FlightSqlService};
-use datafusion_federation_sql::{SQLFederationProvider, SQLSchemaProvider};
+use datafusion_federation::sql::{SQLFederationProvider, SQLSchemaProvider};
+use datafusion_flight_sql_server::service::FlightSqlService;
+use datafusion_flight_sql_table_provider::FlightSQLExecutor;
 use tokio::time::sleep;
 use tonic::transport::Endpoint;
 
@@ -20,11 +20,7 @@ async fn main() -> Result<()> {
     let dsn: String = "0.0.0.0:50051".to_string();
     let remote_ctx = SessionContext::new();
     remote_ctx
-        .register_csv(
-            "test",
-            "./examples/examples/test.csv",
-            CsvReadOptions::new(),
-        )
+        .register_csv("test", "./examples/test.csv", CsvReadOptions::new())
         .await?;
 
     // Remote context
@@ -39,14 +35,8 @@ async fn main() -> Result<()> {
     sleep(Duration::from_secs(3)).await;
 
     // Local context
-    let state = SessionContext::new().state();
+    let state = datafusion_federation::default_session_state();
     let known_tables: Vec<String> = ["test"].iter().map(|&x| x.into()).collect();
-
-    // Register FederationAnalyzer
-    // TODO: Interaction with other analyzers & optimizers.
-    let state = state
-        .add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()))
-        .with_query_planner(Arc::new(FederatedQueryPlanner::new()));
 
     // Register schema
     // TODO: table inference

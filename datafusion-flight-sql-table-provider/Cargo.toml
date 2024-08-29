@@ -1,0 +1,24 @@
+[package]
+name = "datafusion-flight-sql-table-provider"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+datafusion.workspace = true
+# XXX use the release verion on crates.io 
+datafusion-federation = { path = "../datafusion-federation", features = [
+    "sql",
+] }
+
+futures = "0.3.30"
+tonic = { version = "0.11.0", features = [
+    "tls",
+    "transport",
+    "codegen",
+    "prost",
+] }
+arrow = "52.0.0"
+arrow-flight = { version = "52.2.0", features = ["flight-sql-experimental"] }

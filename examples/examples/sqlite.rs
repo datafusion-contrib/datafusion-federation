@@ -5,7 +5,6 @@ use datafusion::{
     error::Result,
     execution::context::{SessionContext, SessionState},
 };
-use datafusion_federation::{FederatedQueryPlanner, FederationAnalyzerRule};
 use datafusion_federation_sql::{connectorx::CXExecutor, SQLFederationProvider, SQLSchemaProvider};
 
 #[tokio::main]
@@ -16,13 +15,7 @@ async fn main() -> datafusion::error::Result<()> {
         .map(|&x| x.into())
         .collect();
 
-    let state = SessionContext::new().state();
-
-    // Register FederationAnalyzer
-    // TODO: Interaction with other analyzers & optimizers.
-    let state = state
-        .add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()))
-        .with_query_planner(Arc::new(FederatedQueryPlanner::new()));
+    let state = datafusion_federation::default_session_state();
 
     // Register schema
     // TODO: table inference
@@ -43,6 +36,7 @@ async fn main() -> datafusion::error::Result<()> {
          JOIN Album a ON t.AlbumId = a.AlbumId
          JOIN Artist ar ON a.ArtistId = ar.ArtistId
          limit 10"#;
+
     let df = ctx.sql(query).await?;
     df.show().await?;
 

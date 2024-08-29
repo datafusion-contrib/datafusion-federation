@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow::{datatypes::SchemaRef, error::ArrowError};
 use arrow_flight::sql::client::FlightSqlServiceClient;
 use async_trait::async_trait;
@@ -6,10 +8,8 @@ use datafusion::{
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
     sql::unparser::dialect::{DefaultDialect, Dialect},
 };
-use datafusion_federation_sql::SQLExecutor;
+use datafusion_federation::sql::SQLExecutor;
 use futures::TryStreamExt;
-
-use std::sync::Arc;
 use tonic::transport::Channel;
 
 pub struct FlightSQLExecutor {

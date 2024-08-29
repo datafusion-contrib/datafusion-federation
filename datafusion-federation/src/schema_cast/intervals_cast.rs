@@ -50,8 +50,7 @@ pub(crate) fn cast_interval_monthdaynano_to_daytime(
     let interval_monthdaynano_array = interval_monthdaynano_array
         .as_any()
         .downcast_ref::<IntervalMonthDayNanoArray>()
-        .ok_or_else(|| 
-            ArrowError::CastError("Failed to cast IntervalMonthDayNanoArray: Unable to downcast to IntervalMonthDayNanoArray".to_string()))?;
+        .ok_or_else(|| ArrowError::CastError("Failed to cast IntervalMonthDayNanoArray: Unable to downcast to IntervalMonthDayNanoArray".to_string()))?;
 
     let mut interval_daytime_builder =
         IntervalDayTimeBuilder::with_capacity(interval_monthdaynano_array.len());
@@ -78,8 +77,10 @@ pub(crate) fn cast_interval_monthdaynano_to_daytime(
 #[cfg(test)]
 mod test {
     use datafusion::arrow::{
-        array::{RecordBatch, IntervalDayTimeArray, IntervalYearMonthArray},
-        datatypes::{DataType, Field, Schema, SchemaRef, IntervalUnit, IntervalMonthDayNano, IntervalDayTime},
+        array::{IntervalDayTimeArray, IntervalYearMonthArray, RecordBatch},
+        datatypes::{
+            DataType, Field, IntervalDayTime, IntervalMonthDayNano, IntervalUnit, Schema, SchemaRef,
+        },
     };
 
     use crate::schema_cast::record_convert::try_cast_to;
@@ -88,9 +89,21 @@ mod test {
 
     fn input_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![
-            Field::new("interval_daytime", DataType::Interval(IntervalUnit::MonthDayNano), false),
-            Field::new("interval_monthday_nano", DataType::Interval(IntervalUnit::MonthDayNano), false),
-            Field::new("interval_yearmonth", DataType::Interval(IntervalUnit::MonthDayNano), false),
+            Field::new(
+                "interval_daytime",
+                DataType::Interval(IntervalUnit::MonthDayNano),
+                false,
+            ),
+            Field::new(
+                "interval_monthday_nano",
+                DataType::Interval(IntervalUnit::MonthDayNano),
+                false,
+            ),
+            Field::new(
+                "interval_yearmonth",
+                DataType::Interval(IntervalUnit::MonthDayNano),
+                false,
+            ),
         ]))
     }
 

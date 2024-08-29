@@ -1,17 +1,16 @@
-use async_trait::async_trait;
+use std::{any::Any, sync::Arc};
 
+use async_trait::async_trait;
 use datafusion::logical_expr::{TableSource, TableType};
 use datafusion::{
     arrow::datatypes::SchemaRef, catalog::SchemaProvider, datasource::TableProvider, error::Result,
 };
 use futures::future::join_all;
-use std::{any::Any, sync::Arc};
 
-use datafusion_federation::{
-    FederatedTableProviderAdaptor, FederatedTableSource, FederationProvider,
+use crate::{
+    sql::SQLFederationProvider, FederatedTableProviderAdaptor, FederatedTableSource,
+    FederationProvider,
 };
-
-use crate::SQLFederationProvider;
 
 pub struct SQLSchemaProvider {
     // provider: Arc<SQLFederationProvider>,

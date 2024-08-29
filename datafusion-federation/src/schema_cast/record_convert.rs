@@ -1,7 +1,7 @@
 use datafusion::arrow::{
     array::{Array, RecordBatch},
     compute::cast,
-    datatypes::{DataType, IntervalUnit, SchemaRef}
+    datatypes::{DataType, IntervalUnit, SchemaRef},
 };
 use std::sync::Arc;
 
@@ -9,7 +9,8 @@ use super::{
     intervals_cast::{
         cast_interval_monthdaynano_to_daytime, cast_interval_monthdaynano_to_yearmonth,
     },
-    lists_cast::{cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list}, struct_cast::cast_string_to_struct,
+    lists_cast::{cast_string_to_fixed_size_list, cast_string_to_large_list, cast_string_to_list},
+    struct_cast::cast_string_to_struct,
 };
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

@@ -1,14 +1,10 @@
-use arrow::datatypes::SchemaRef;
-use arrow::error::ArrowError;
-use arrow::ipc::writer::IpcWriteOptions;
-use arrow_flight::encode::FlightDataEncoderBuilder;
-use arrow_flight::error::FlightError;
-use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
-use arrow_flight::sql::server::{
-    FlightSqlService as ArrowFlightSqlService, PeekableFlightDataStream,
-};
+use std::{pin::Pin, sync::Arc};
+
+use arrow::{datatypes::SchemaRef, error::ArrowError, ipc::writer::IpcWriteOptions};
 use arrow_flight::sql::{
-    self, ActionBeginSavepointRequest, ActionBeginSavepointResult, ActionBeginTransactionRequest,
+    self,
+    server::{FlightSqlService as ArrowFlightSqlService, PeekableFlightDataStream},
+    ActionBeginSavepointRequest, ActionBeginSavepointResult, ActionBeginTransactionRequest,
     ActionBeginTransactionResult, ActionCancelQueryRequest, ActionCancelQueryResult,
     ActionClosePreparedStatementRequest, ActionCreatePreparedStatementRequest,
     ActionCreatePreparedStatementResult, ActionCreatePreparedSubstraitPlanRequest,
@@ -20,27 +16,31 @@ use arrow_flight::sql::{
     DoPutPreparedStatementResult, SqlInfo, TicketStatementQuery,
 };
 use arrow_flight::{
+    encode::FlightDataEncoderBuilder,
+    error::FlightError,
+    flight_service_server::{FlightService, FlightServiceServer},
     Action, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse,
     IpcMessage, SchemaAsIpc, Ticket,
 };
-use datafusion::common::arrow::datatypes::Schema;
-use datafusion::dataframe::DataFrame;
-use datafusion::error::{DataFusionError, Result as DataFusionResult};
-use datafusion::execution::context::{SQLOptions, SessionContext, SessionState};
-use datafusion::logical_expr::LogicalPlan;
-use datafusion::physical_plan::SendableRecordBatchStream;
-use datafusion_substrait::logical_plan::consumer::from_substrait_plan;
-use datafusion_substrait::serializer::deserialize_bytes;
+use datafusion::{
+    common::arrow::datatypes::Schema,
+    dataframe::DataFrame,
+    error::{DataFusionError, Result as DataFusionResult},
+    execution::context::{SQLOptions, SessionContext, SessionState},
+    logical_expr::LogicalPlan,
+    physical_plan::SendableRecordBatchStream,
+};
+use datafusion_substrait::{
+    logical_plan::consumer::from_substrait_plan, serializer::deserialize_bytes,
+};
 use futures::{Stream, StreamExt, TryStreamExt};
 use log::info;
 use prost::bytes::Bytes;
-use std::pin::Pin;
-use std::sync::Arc;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status, Streaming};
 
+use super::session::{SessionStateProvider, StaticSessionStateProvider};
 use super::state::{CommandTicket, QueryHandle};
-use super::{SessionStateProvider, StaticSessionStateProvider};
 
 type Result<T, E = Status> = std::result::Result<T, E>;
 
@@ -601,7 +601,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         &self,
         _query: CommandPreparedStatementQuery,
         request: Request<PeekableFlightDataStream>,
-    ) -> Result<DoPutPreparedStatementResult> {
+    ) -> Result<DoPutPreparedStatementResult, Status> {
         info!("do_put_prepared_statement_query");
         let (_, _) = self.new_context(request)?;
 

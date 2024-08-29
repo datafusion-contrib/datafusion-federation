@@ -1,11 +1,12 @@
-use core::fmt;
-use std::{any::Any, collections::HashMap, sync::Arc, vec};
+mod executor;
+mod schema;
+
+use std::{any::Any, collections::HashMap, fmt, sync::Arc, vec};
 
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
     common::Column,
-    config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
     logical_expr::{
@@ -16,7 +17,7 @@ use datafusion::{
         Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
         TryCast,
     },
-    optimizer::analyzer::{Analyzer, AnalyzerRule},
+    optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
         DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
@@ -27,32 +28,28 @@ use datafusion::{
         TableReference,
     },
 };
-use datafusion_federation::{
+
+pub use executor::{SQLExecutor, SQLExecutorRef};
+pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
+
+use crate::{
     get_table_source, schema_cast, FederatedPlanNode, FederationPlanner, FederationProvider,
 };
-
-mod schema;
-pub use schema::*;
-
-#[cfg(feature = "connectorx")]
-pub mod connectorx;
-mod executor;
-pub use executor::*;
 
 // #[macro_use]
 // extern crate derive_builder;
 
 // SQLFederationProvider provides federation to SQL DMBSs.
 pub struct SQLFederationProvider {
-    analyzer: Arc<Analyzer>,
+    optimizer: Arc<Optimizer>,
     executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationProvider {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
-            analyzer: Arc::new(Analyzer::with_rules(vec![Arc::new(
-                SQLFederationAnalyzerRule::new(Arc::clone(&executor)),
+            optimizer: Arc::new(Optimizer::with_rules(vec![Arc::new(
+                SQLFederationOptimizerRule::new(executor.clone()),
             )])),
             executor,
         }
@@ -68,16 +65,16 @@ impl FederationProvider for SQLFederationProvider {
         self.executor.compute_context()
     }
 
-    fn analyzer(&self) -> Option<Arc<Analyzer>> {
-        Some(Arc::clone(&self.analyzer))
+    fn optimizer(&self) -> Option<Arc<Optimizer>> {
+        Some(self.optimizer.clone())
     }
 }
 
-struct SQLFederationAnalyzerRule {
+struct SQLFederationOptimizerRule {
     planner: Arc<dyn FederationPlanner>,
 }
 
-impl SQLFederationAnalyzerRule {
+impl SQLFederationOptimizerRule {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {
             planner: Arc::new(SQLFederationPlanner::new(Arc::clone(&executor))),
@@ -85,18 +82,35 @@ impl SQLFederationAnalyzerRule {
     }
 }
 
-impl AnalyzerRule for SQLFederationAnalyzerRule {
-    fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
+impl OptimizerRule for SQLFederationOptimizerRule {
+    fn try_optimize(
+        &self,
+        plan: &LogicalPlan,
+        _config: &dyn OptimizerConfig,
+    ) -> Result<Option<LogicalPlan>> {
+        if let LogicalPlan::Extension(Extension { ref node }) = plan {
+            if node.name() == "Federated" {
+                // Avoid attempting double federation
+                return Ok(None);
+            }
+        }
+        // Simply accept the entire plan for now
+        let fed_plan = FederatedPlanNode::new(plan.clone(), self.planner.clone());
         let ext_node = Extension {
             node: Arc::new(fed_plan),
         };
-        Ok(LogicalPlan::Extension(ext_node))
+        Ok(Some(LogicalPlan::Extension(ext_node)))
     }
 
     /// A human readable name for this analyzer rule
     fn name(&self) -> &str {
         "federate_sql"
+    }
+
+    /// XXX
+    /// Does this rule support rewriting owned plans (rather than by reference)?
+    fn supports_rewrite(&self) -> bool {
+        false
     }
 }
 
@@ -170,9 +184,7 @@ fn rewrite_column_name_in_expr(
     }
 
     // Find the first occurrence of table_ref_str starting from start_pos
-    let Some(idx) = col_name[start_pos..].find(table_ref_str) else {
-        return None;
-    };
+    let idx = col_name[start_pos..].find(table_ref_str)?;
 
     // Calculate the absolute index of the occurrence in string as the index above is relative to start_pos
     let idx = start_pos + idx;
@@ -216,7 +228,6 @@ fn rewrite_column_name_in_expr(
         rewrite,
         &col_name[idx + table_ref_str.len()..]
     );
-
     // Check if the rewritten name contains more occurrence of table_ref_str, and rewrite them as well
     // This is done by providing the updated start_pos for search
     match rewrite_column_name_in_expr(&rewritten_name, table_ref_str, rewrite, idx + rewrite.len())
@@ -655,7 +666,7 @@ impl DisplayAs for VirtualExecutionPlan {
             write!(f, " rewritten_sql={query}")?;
         };
 
-        Ok(())
+        write!(f, " sql={ast}")
     }
 }
 
@@ -688,7 +699,10 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        self.executor.execute(self.sql()?.as_str(), self.schema())
+        let ast = plan_to_sql(&self.plan)?;
+        let query = format!("{ast}");
+
+        self.executor.execute(query.as_str(), self.schema())
     }
 
     fn properties(&self) -> &PlanProperties {
@@ -698,6 +712,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
 #[cfg(test)]
 mod tests {
+    use crate::FederatedTableProviderAdaptor;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
         catalog::SchemaProvider,
@@ -709,7 +724,6 @@ mod tests {
         logical_expr::LogicalPlanBuilder,
         sql::{unparser::dialect::DefaultDialect, unparser::dialect::Dialect},
     };
-    use datafusion_federation::FederatedTableProviderAdaptor;
 
     use super::*;
 

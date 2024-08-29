@@ -10,17 +10,29 @@ description = "Datafusion federation."
 name = "datafusion_federation"
 path = "src/lib.rs"
 
+[package.metadata.docs.rs]
+# Whether to pass `--all-features` to Cargo (default: false)
+all-features = true
+# Whether to pass `--no-default-features` to Cargo (default: false)
+no-default-features = true
+
+[features]
+sql = []
+
 [dependencies]
+futures.workspace = true
 async-trait.workspace = true
 datafusion.workspace = true
 async-stream.workspace = true
-futures.workspace = true
 arrow-json.workspace = true
 
-[package.metadata.docs.rs]
 
-# Whether to pass `--all-features` to Cargo (default: false)
-all-features = true
+[dev-dependencies]
+tokio = { version = "1.39.3", features = ["full"] }
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing = "0.1.40"
 
-# Whether to pass `--no-default-features` to Cargo (default: false)
-no-default-features = true
+[[example]]
+name = "df-csv"
+path = "examples/df-csv.rs"
+required-features = ["sql"]
