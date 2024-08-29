@@ -23,6 +23,7 @@ pub use table_provider::{FederatedTableProviderAdaptor, FederatedTableSource};
 // TODO move schema_cast.rs to schema_cast directory
 pub mod schema_cast;
 
+
 pub fn default_session_state() -> SessionState {
     let rules = default_optimizer_rules();
     SessionStateBuilder::new()

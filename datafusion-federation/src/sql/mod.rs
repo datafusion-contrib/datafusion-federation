@@ -228,7 +228,6 @@ fn rewrite_column_name_in_expr(
         rewrite,
         &col_name[idx + table_ref_str.len()..]
     );
-
     // Check if the rewritten name contains more occurrence of table_ref_str, and rewrite them as well
     // This is done by providing the updated start_pos for search
     match rewrite_column_name_in_expr(&rewritten_name, table_ref_str, rewrite, idx + rewrite.len())
@@ -667,7 +666,7 @@ impl DisplayAs for VirtualExecutionPlan {
             write!(f, " rewritten_sql={query}")?;
         };
 
-        Ok(())
+        write!(f, " sql={ast}")
     }
 }
 
@@ -700,7 +699,10 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        self.executor.execute(self.sql()?.as_str(), self.schema())
+        let ast = plan_to_sql(&self.plan)?;
+        let query = format!("{ast}");
+
+        self.executor.execute(query.as_str(), self.schema())
     }
 
     fn properties(&self) -> &PlanProperties {
@@ -962,3 +964,4 @@ mod tests {
         Ok(())
     }
 }
+

@@ -20,4 +20,3 @@ futures = "0.3.30"
 datafusion = "41.0.0"
 datafusion-substrait = "41.0.0"
 arrow-json = "52.2.0"
-
