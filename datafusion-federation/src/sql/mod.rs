@@ -1,15 +1,22 @@
 mod executor;
 mod schema;
 
-use core::fmt;
-use std::{any::Any, collections::HashMap, sync::Arc, vec};
+use std::{any::Any, collections::HashMap, fmt, sync::Arc, vec};
 
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
+    common::Column,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{Extension, LogicalPlan},
+    logical_expr::{
+        expr::{
+            AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
+            WindowFunction,
+        },
+        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
+        TryCast,
+    },
     optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
@@ -21,20 +28,13 @@ use datafusion::{
         TableReference,
     },
 };
-use datafusion_federation::{
-    get_table_source, schema_cast, FederatedPlanNode, FederationPlanner, FederationProvider,
-};
-
-
-
-#[cfg(feature = "connectorx")]
-pub mod connectorx;
-
 
 pub use executor::{SQLExecutor, SQLExecutorRef};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
 
-use crate::{FederatedPlanNode, FederationPlanner, FederationProvider};
+use crate::{
+    get_table_source, schema_cast, FederatedPlanNode, FederationPlanner, FederationProvider,
+};
 
 // #[macro_use]
 // extern crate derive_builder;
@@ -184,9 +184,7 @@ fn rewrite_column_name_in_expr(
     }
 
     // Find the first occurrence of table_ref_str starting from start_pos
-    let Some(idx) = col_name[start_pos..].find(table_ref_str) else {
-        return None;
-    };
+    let idx = col_name[start_pos..].find(table_ref_str)?;
 
     // Calculate the absolute index of the occurrence in string as the index above is relative to start_pos
     let idx = start_pos + idx;
@@ -712,6 +710,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
 #[cfg(test)]
 mod tests {
+    use crate::FederatedTableProviderAdaptor;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
         catalog::SchemaProvider,
@@ -723,7 +722,6 @@ mod tests {
         logical_expr::LogicalPlanBuilder,
         sql::{unparser::dialect::DefaultDialect, unparser::dialect::Dialect},
     };
-    use datafusion_federation::FederatedTableProviderAdaptor;
 
     use super::*;
 

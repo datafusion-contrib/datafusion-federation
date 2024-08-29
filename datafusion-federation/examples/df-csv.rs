@@ -10,7 +10,7 @@ use datafusion::{
         options::CsvReadOptions,
     },
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
-    sql::sqlparser::dialect::{Dialect, GenericDialect},
+    sql::unparser::dialect::{DefaultDialect, Dialect},
 };
 use datafusion_federation::sql::{SQLExecutor, SQLFederationProvider, SQLSchemaProvider};
 use futures::TryStreamExt;
@@ -106,7 +106,7 @@ impl SQLExecutor for InMemorySQLExecutor {
     }
 
     fn dialect(&self) -> Arc<dyn Dialect> {
-        Arc::new(GenericDialect {})
+        Arc::new(DefaultDialect {})
     }
 }
 
