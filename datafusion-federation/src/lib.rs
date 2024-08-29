@@ -16,7 +16,9 @@ use datafusion::{
 };
 
 pub use optimizer::{get_table_source, FederationOptimizerRule};
-pub use plan_node::{FederatedPlanNode, FederatedQueryPlanner, FederationPlanner};
+pub use plan_node::{
+    FederatedPlanNode, FederatedPlanner, FederatedQueryPlanner, FederationPlanner,
+};
 pub use table_provider::{FederatedTableProviderAdaptor, FederatedTableSource};
 
 // TODO clean up this
