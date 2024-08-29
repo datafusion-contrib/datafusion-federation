@@ -672,7 +672,7 @@ impl DisplayAs for VirtualExecutionPlan {
 
 impl ExecutionPlan for VirtualExecutionPlan {
     fn name(&self) -> &str {
-        "VirtualExecutionPlan"
+        "sql_federation_exec"
     }
 
     fn as_any(&self) -> &dyn Any {
