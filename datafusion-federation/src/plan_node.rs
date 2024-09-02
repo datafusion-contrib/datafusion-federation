@@ -54,7 +54,7 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
     }
 
     fn fmt_for_explain(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Federated\n {:?}", self.plan)
+        write!(f, "Federated\n {}", self.plan)
     }
 
     fn with_exprs_and_inputs(&self, exprs: Vec<Expr>, inputs: Vec<LogicalPlan>) -> Result<Self> {
@@ -126,7 +126,7 @@ impl Hash for FederatedPlanNode {
 }
 
 #[derive(Default)]
-struct FederatedPlanner {}
+pub struct FederatedPlanner {}
 
 impl FederatedPlanner {
     pub fn new() -> Self {
@@ -152,7 +152,7 @@ impl ExtensionPlanner for FederatedPlanner {
                 ));
             }
 
-            let fed_planner = fed_node.planner.clone();
+            let fed_planner = Arc::clone(&fed_node.planner);
             let exec_plan = fed_planner.plan_federation(fed_node, session_state).await?;
             return Ok(Some(exec_plan));
         }

@@ -16,8 +16,14 @@ use datafusion::{
 };
 
 pub use optimizer::{get_table_source, FederationOptimizerRule};
-pub use plan_node::{FederatedPlanNode, FederatedQueryPlanner, FederationPlanner};
+pub use plan_node::{
+    FederatedPlanNode, FederatedPlanner, FederatedQueryPlanner, FederationPlanner,
+};
 pub use table_provider::{FederatedTableProviderAdaptor, FederatedTableSource};
+
+// TODO clean up this
+// TODO move schema_cast.rs to schema_cast directory
+pub mod schema_cast;
 
 pub fn default_session_state() -> SessionState {
     let rules = default_optimizer_rules();

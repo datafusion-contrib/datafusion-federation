@@ -8,12 +8,15 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.1.6"
 edition = "2021"
-license = "MIT"
+license = "Apache-2.0"
 readme = "README.md"
 
 [workspace.dependencies]
 async-trait = "0.1.81"
+async-stream = "0.3.5"
+futures = "0.3.30"
 datafusion = "41.0.0"
 datafusion-substrait = "41.0.0"
+arrow-json = "52.2.0"

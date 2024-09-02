@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use core::fmt;
 use datafusion::{
     arrow::datatypes::SchemaRef, error::Result, physical_plan::SendableRecordBatchStream,
-    sql::sqlparser::dialect::Dialect,
+    sql::unparser::dialect::Dialect,
 };
 use std::sync::Arc;
 

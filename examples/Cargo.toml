@@ -6,7 +6,7 @@ license.workspace = true
 readme.workspace = true
 
 [dev-dependencies]
-arrow-flight = { version = "51.0.0", features = ["flight-sql-experimental"] }
+arrow-flight = { version = "52.0.0", features = ["flight-sql-experimental"] }
 tokio = "1.35.1"
 async-trait.workspace = true
 datafusion.workspace = true

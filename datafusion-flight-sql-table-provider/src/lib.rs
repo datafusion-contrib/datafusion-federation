@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use datafusion::{
     error::{DataFusionError, Result},
     physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
-    sql::sqlparser::dialect::{Dialect, GenericDialect},
+    sql::unparser::dialect::{DefaultDialect, Dialect},
 };
 use datafusion_federation::sql::SQLExecutor;
 use futures::TryStreamExt;
@@ -68,11 +68,11 @@ impl SQLExecutor for FlightSQLExecutor {
     }
     fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
         let future_stream =
-            make_flight_sql_stream(sql.to_string(), self.client.clone(), schema.clone());
+            make_flight_sql_stream(sql.to_string(), self.client.clone(), Arc::clone(&schema));
         let stream = futures::stream::once(future_stream).try_flatten();
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
-            schema.clone(),
+            Arc::clone(&schema),
             stream,
         )))
     }
@@ -96,7 +96,7 @@ impl SQLExecutor for FlightSQLExecutor {
     }
 
     fn dialect(&self) -> Arc<dyn Dialect> {
-        Arc::new(GenericDialect {})
+        Arc::new(DefaultDialect {})
     }
 }
 
