@@ -572,7 +572,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         // Append all schemas to builder, the builder handles applying the filters.
         let mut builder = query.into_builder();
         if let Some(catalog_name) = &catalog_name {
-            if let Some(catalog) = ctx.inner.catalog(&catalog_name) {
+            if let Some(catalog) = ctx.inner.catalog(catalog_name) {
                 for schema_name in &catalog.schema_names() {
                     builder.append(catalog_name, schema_name);
                 }
@@ -599,7 +599,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         let mut builder = query.into_builder();
         // Append all schemas/tables to builder, the builder handles applying the filters.
         if let Some(catalog_name) = &catalog_name {
-            if let Some(catalog) = ctx.inner.catalog(&catalog_name) {
+            if let Some(catalog) = ctx.inner.catalog(catalog_name) {
                 for schema_name in &catalog.schema_names() {
                     if let Some(schema) = catalog.schema(schema_name) {
                         for table_name in &schema.table_names() {
