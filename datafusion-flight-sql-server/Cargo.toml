@@ -3,6 +3,8 @@ name = "datafusion-flight-sql-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+description = "Datafusion flight sql server."
 
 [lib]
 name = "datafusion_flight_sql_server"
@@ -11,10 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 datafusion.workspace = true
 datafusion-substrait.workspace = true
-# XXX use the release verion on crates.io 
-datafusion-federation = { path = "../datafusion-federation", features = [
-    "sql",
-] }
+datafusion-federation = { workspace = true, features = ["sql"] }
 
 futures = "0.3.30"
 tonic = { version = "0.11.0", features = [
