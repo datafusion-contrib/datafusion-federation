@@ -2,11 +2,12 @@ use async_trait::async_trait;
 use core::fmt;
 use datafusion::{
     arrow::datatypes::SchemaRef, error::Result, physical_plan::SendableRecordBatchStream,
-    sql::unparser::dialect::Dialect,
+    sql::sqlparser::ast, sql::unparser::dialect::Dialect,
 };
 use std::sync::Arc;
 
 pub type SQLExecutorRef = Arc<dyn SQLExecutor>;
+pub type AstAnalyzer = Box<dyn Fn(ast::Statement) -> Result<ast::Statement>>;
 
 #[async_trait]
 pub trait SQLExecutor: Sync + Send {
@@ -19,6 +20,11 @@ pub trait SQLExecutor: Sync + Send {
 
     // The specific SQL dialect (currently supports 'sqlite', 'postgres', 'flight')
     fn dialect(&self) -> Arc<dyn Dialect>;
+
+    /// Returns an AST analyzer specific for this engine to modify the AST before execution
+    fn ast_analyzer(&self) -> Option<AstAnalyzer> {
+        None
+    }
 
     // Execution
     /// Execute a SQL query
