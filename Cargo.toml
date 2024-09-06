@@ -8,10 +8,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.6"
+version = "0.2.1"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
+repository = "https://github.com/datafusion-contrib/datafusion-federation"
 
 [workspace.dependencies]
 async-trait = "0.1.81"
@@ -20,3 +21,4 @@ futures = "0.3.30"
 datafusion = "41.0.0"
 datafusion-substrait = "41.0.0"
 arrow-json = "52.2.0"
+datafusion-federation = "0.2.1"
