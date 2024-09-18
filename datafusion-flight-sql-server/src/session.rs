@@ -1,4 +1,4 @@
-use datafusion::execution::context::SessionState;
+use datafusion::execution::SessionState;
 use tonic::{Request, Status};
 
 type Result<T, E = Status> = std::result::Result<T, E>;

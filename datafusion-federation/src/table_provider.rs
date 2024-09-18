@@ -1,15 +1,11 @@
 use std::{any::Any, borrow::Cow, sync::Arc};
 
+use arrow_schema::SchemaRef;
 use async_trait::async_trait;
-use datafusion::{
-    arrow::datatypes::SchemaRef,
-    catalog::Session,
-    common::Constraints,
-    datasource::TableProvider,
-    error::{DataFusionError, Result},
-    logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType},
-    physical_plan::ExecutionPlan,
-};
+use datafusion_catalog::{Session, TableProvider};
+use datafusion_common::{Constraints, DataFusionError, Result};
+use datafusion_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType};
+use datafusion_physical_plan::ExecutionPlan;
 
 use crate::FederationProvider;
 

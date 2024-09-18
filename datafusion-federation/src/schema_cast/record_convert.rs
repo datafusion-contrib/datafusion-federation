@@ -1,9 +1,8 @@
-use datafusion::arrow::{
-    array::{Array, RecordBatch},
-    compute::cast,
-    datatypes::{DataType, IntervalUnit, SchemaRef},
-};
 use std::sync::Arc;
+
+use arrow_array::{Array, RecordBatch};
+use arrow_cast::cast;
+use arrow_schema::{ArrowError, DataType, IntervalUnit, SchemaRef};
 
 use super::{
     intervals_cast::{
@@ -17,14 +16,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Debug)]
 pub enum Error {
-    UnableToConvertRecordBatch {
-        source: datafusion::arrow::error::ArrowError,
-    },
+    UnableToConvertRecordBatch { source: ArrowError },
 
-    UnexpectedNumberOfColumns {
-        expected: usize,
-        found: usize,
-    },
+    UnexpectedNumberOfColumns { expected: usize, found: usize },
 }
 
 impl std::error::Error for Error {}
@@ -109,12 +103,10 @@ pub fn try_cast_to(record_batch: RecordBatch, expected_schema: SchemaRef) -> Res
 
 #[cfg(test)]
 mod test {
-    use datafusion::arrow::{
-        array::{Int32Array, StringArray},
-        datatypes::{DataType, Field, Schema, TimeUnit},
-    };
-
     use super::*;
+
+    use arrow_array::{Int32Array, StringArray};
+    use arrow_schema::{Field, Schema, TimeUnit};
 
     fn schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

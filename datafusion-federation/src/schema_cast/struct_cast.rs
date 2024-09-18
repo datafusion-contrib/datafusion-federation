@@ -1,9 +1,6 @@
+use arrow_array::{Array, ArrayRef, StringArray};
 use arrow_json::ReaderBuilder;
-use datafusion::arrow::{
-    array::{Array, ArrayRef, StringArray},
-    datatypes::Field,
-    error::ArrowError,
-};
+use arrow_schema::{ArrowError, Field};
 use std::sync::Arc;
 
 pub type Result<T, E = crate::schema_cast::record_convert::Error> = std::result::Result<T, E>;
@@ -55,14 +52,14 @@ pub(crate) fn cast_string_to_struct(
 
 #[cfg(test)]
 mod test {
-    use datafusion::arrow::{
-        array::{Int32Builder, RecordBatch, StringArray, StringBuilder, StructBuilder},
-        datatypes::{DataType, Field, Schema, SchemaRef},
-    };
-
+    use super::*;
     use crate::schema_cast::record_convert::try_cast_to;
 
-    use super::*;
+    use arrow_array::{
+        builder::{Int32Builder, StringBuilder, StructBuilder},
+        RecordBatch,
+    };
+    use arrow_schema::{DataType, Schema, SchemaRef};
 
     fn input_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![Field::new(

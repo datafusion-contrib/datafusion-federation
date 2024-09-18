@@ -3,30 +3,27 @@ mod schema;
 
 use std::{any::Any, collections::HashMap, fmt, sync::Arc, vec};
 
+use arrow_schema::{Schema, SchemaRef};
 use async_trait::async_trait;
-use datafusion::{
-    arrow::datatypes::{Schema, SchemaRef},
-    common::Column,
-    error::Result,
-    execution::{context::SessionState, TaskContext},
-    logical_expr::{
-        expr::{
-            AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
-            WindowFunction,
-        },
-        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
-        TryCast,
+use datafusion::execution::SessionState;
+use datafusion_common::{Column, Result};
+use datafusion_execution::{SendableRecordBatchStream, TaskContext};
+use datafusion_expr::{
+    expr::{
+        AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
+        WindowFunction,
     },
-    optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
-    physical_expr::EquivalenceProperties,
-    physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
-        SendableRecordBatchStream,
-    },
-    sql::{
-        unparser::{plan_to_sql, Unparser},
-        TableReference,
-    },
+    Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
+    TryCast,
+};
+use datafusion_optimizer::{Optimizer, OptimizerConfig, OptimizerRule};
+use datafusion_physical_expr::EquivalenceProperties;
+use datafusion_physical_plan::{
+    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+};
+use datafusion_sql::{
+    unparser::{plan_to_sql, Unparser},
+    TableReference,
 };
 
 pub use executor::{SQLExecutor, SQLExecutorRef};
@@ -717,20 +714,18 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
 #[cfg(test)]
 mod tests {
-    use crate::FederatedTableProviderAdaptor;
-    use datafusion::{
-        arrow::datatypes::{DataType, Field},
-        catalog::SchemaProvider,
-        catalog_common::MemorySchemaProvider,
-        common::Column,
-        datasource::{DefaultTableSource, TableProvider},
-        error::DataFusionError,
-        execution::context::SessionContext,
-        logical_expr::LogicalPlanBuilder,
-        sql::{unparser::dialect::DefaultDialect, unparser::dialect::Dialect},
-    };
-
     use super::*;
+    use crate::FederatedTableProviderAdaptor;
+
+    use arrow_schema::{DataType, Field};
+    use datafusion::{
+        catalog_common::MemorySchemaProvider, datasource::DefaultTableSource,
+        prelude::SessionContext,
+    };
+    use datafusion_catalog::{SchemaProvider, TableProvider};
+    use datafusion_common::DataFusionError;
+    use datafusion_expr::LogicalPlanBuilder;
+    use datafusion_sql::unparser::dialect::{DefaultDialect, Dialect};
 
     struct TestSQLExecutor {}
 
@@ -941,11 +936,7 @@ mod tests {
         Ok(())
     }
 
-    async fn test_sql(
-        ctx: &SessionContext,
-        sql_query: &str,
-        expected_sql: &str,
-    ) -> Result<(), datafusion::error::DataFusionError> {
+    async fn test_sql(ctx: &SessionContext, sql_query: &str, expected_sql: &str) -> Result<()> {
         let data_frame = ctx.sql(sql_query).await?;
 
         println!("before optimization: \n{:#?}", data_frame.logical_plan());

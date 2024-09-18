@@ -1,10 +1,10 @@
+use arrow_schema::SchemaRef;
 use async_stream::stream;
-use datafusion::arrow::datatypes::SchemaRef;
-use datafusion::error::{DataFusionError, Result};
-use datafusion::execution::{SendableRecordBatchStream, TaskContext};
-use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
+use datafusion_common::{DataFusionError, Result};
+use datafusion_execution::{SendableRecordBatchStream, TaskContext};
+use datafusion_physical_plan::{
+    stream::RecordBatchStreamAdapter, DisplayAs, DisplayFormatType, ExecutionPlan,
+    ExecutionPlanProperties, PlanProperties,
 };
 use futures::StreamExt;
 use std::any::Any;

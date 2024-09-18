@@ -1,10 +1,10 @@
 use std::{any::Any, sync::Arc};
 
+use arrow_schema::SchemaRef;
 use async_trait::async_trait;
-use datafusion::logical_expr::{TableSource, TableType};
-use datafusion::{
-    arrow::datatypes::SchemaRef, catalog::SchemaProvider, datasource::TableProvider, error::Result,
-};
+use datafusion_catalog::{SchemaProvider, TableProvider};
+use datafusion_common::Result;
+use datafusion_expr::{TableSource, TableType};
 use futures::future::join_all;
 
 use crate::{

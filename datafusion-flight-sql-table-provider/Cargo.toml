@@ -6,11 +6,14 @@ license.workspace = true
 readme.workspace = true
 
 [dependencies]
-arrow.workspace = true
 arrow-flight.workspace = true
+arrow-schema.workspace = true
 async-trait.workspace = true
-datafusion.workspace = true
+datafusion-common.workspace = true
+datafusion-execution.workspace = true
 datafusion-federation = { workspace = true, features = ["sql"] }
+datafusion-physical-plan.workspace = true
+datafusion-sql.workspace = true
 
 futures = "0.3.30"
 tonic = { version = "0.12.1", features = [

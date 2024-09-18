@@ -1,14 +1,14 @@
-use arrow_json::ReaderBuilder;
-use datafusion::arrow::{
-    array::{
-        Array, ArrayRef, BooleanArray, BooleanBuilder, FixedSizeListBuilder, Float32Array,
-        Float32Builder, Float64Array, Float64Builder, Int16Array, Int16Builder, Int32Array,
-        Int32Builder, Int64Array, Int64Builder, Int8Array, Int8Builder, LargeListBuilder,
-        LargeStringArray, LargeStringBuilder, ListArray, ListBuilder, StringArray, StringBuilder,
+use arrow_array::{
+    builder::{
+        BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder, Int16Builder,
+        Int32Builder, Int64Builder, Int8Builder, LargeListBuilder, LargeStringBuilder, ListBuilder,
+        StringBuilder,
     },
-    datatypes::{DataType, Field, FieldRef},
-    error::ArrowError,
+    Array, ArrayRef, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
+    Int8Array, LargeStringArray, ListArray, StringArray,
 };
+use arrow_json::ReaderBuilder;
+use arrow_schema::{ArrowError, DataType, Field, FieldRef};
 use std::sync::Arc;
 
 pub type Result<T, E = crate::schema_cast::record_convert::Error> = std::result::Result<T, E>;
@@ -517,14 +517,11 @@ pub(crate) fn cast_string_to_fixed_size_list(
 
 #[cfg(test)]
 mod test {
-    use datafusion::arrow::{
-        array::{RecordBatch, StringArray},
-        datatypes::{DataType, Field, Schema, SchemaRef},
-    };
-
+    use super::*;
     use crate::schema_cast::record_convert::try_cast_to;
 
-    use super::*;
+    use arrow_array::RecordBatch;
+    use arrow_schema::{Schema, SchemaRef};
 
     fn input_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

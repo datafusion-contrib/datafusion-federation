@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use arrow::{datatypes::SchemaRef, error::ArrowError};
 use arrow_flight::sql::client::FlightSqlServiceClient;
+use arrow_schema::{ArrowError, SchemaRef};
 use async_trait::async_trait;
-use datafusion::{
-    error::{DataFusionError, Result},
-    physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
-    sql::unparser::dialect::{DefaultDialect, Dialect},
-};
+use datafusion_common::{DataFusionError, Result};
+use datafusion_execution::SendableRecordBatchStream;
 use datafusion_federation::sql::SQLExecutor;
+use datafusion_physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion_sql::unparser::dialect::{DefaultDialect, Dialect};
 use futures::TryStreamExt;
 use tonic::transport::Channel;
 

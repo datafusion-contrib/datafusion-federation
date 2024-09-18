@@ -2,13 +2,11 @@ use std::{sync::Arc, time::Duration};
 
 use arrow_flight::sql::client::FlightSqlServiceClient;
 use datafusion::{
-    catalog::SchemaProvider,
-    error::{DataFusionError, Result},
-    execution::{
-        context::{SessionContext, SessionState},
-        options::CsvReadOptions,
-    },
+    execution::SessionState,
+    prelude::{CsvReadOptions, SessionContext},
 };
+use datafusion_catalog::SchemaProvider;
+use datafusion_common::{DataFusionError, Result};
 use datafusion_federation::sql::{SQLFederationProvider, SQLSchemaProvider};
 use datafusion_flight_sql_server::service::FlightSqlService;
 use datafusion_flight_sql_table_provider::FlightSQLExecutor;
