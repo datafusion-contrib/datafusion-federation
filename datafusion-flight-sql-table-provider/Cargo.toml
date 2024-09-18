@@ -6,16 +6,10 @@ license.workspace = true
 readme.workspace = true
 
 [dependencies]
+arrow-flight.workspace = true
+arrow.workspace = true
 async-trait.workspace = true
-datafusion.workspace = true
 datafusion-federation = { workspace = true, features = ["sql"] }
-
-futures = "0.3.30"
-tonic = { version = "0.11.0", features = [
-    "tls",
-    "transport",
-    "codegen",
-    "prost",
-] }
-arrow = "52.0.0"
-arrow-flight = { version = "52.2.0", features = ["flight-sql-experimental"] }
+datafusion.workspace = true
+futures.workspace = true
+tonic.workspace = true
