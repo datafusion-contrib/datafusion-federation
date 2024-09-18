@@ -8,7 +8,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -21,4 +21,4 @@ futures = "0.3.30"
 datafusion = "41.0.0"
 datafusion-substrait = "41.0.0"
 arrow-json = "52.2.0"
-datafusion-federation = "0.2.1"
+datafusion-federation = "0.2.2"
