@@ -408,14 +408,6 @@ fn rewrite_table_scans_in_expr(
                 try_cast.data_type,
             )))
         }
-        Expr::Sort(sort) => {
-            let expr = rewrite_table_scans_in_expr(*sort.expr, known_rewrites)?;
-            Ok(Expr::Sort(Sort::new(
-                Box::new(expr),
-                sort.asc,
-                sort.nulls_first,
-            )))
-        }
         Expr::ScalarFunction(sf) => {
             let args = sf
                 .args
@@ -442,8 +434,11 @@ fn rewrite_table_scans_in_expr(
                 .order_by
                 .map(|e| {
                     e.into_iter()
-                        .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
-                        .collect::<Result<Vec<Expr>>>()
+                        .map(|s| {
+                            rewrite_table_scans_in_expr(s.expr, known_rewrites)
+                                .map(|e| Sort::new(e, s.asc, s.nulls_first))
+                        })
+                        .collect::<Result<Vec<Sort>>>()
                 })
                 .transpose()?;
             Ok(Expr::AggregateFunction(AggregateFunction {
@@ -469,8 +464,11 @@ fn rewrite_table_scans_in_expr(
             let order_by = wf
                 .order_by
                 .into_iter()
-                .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
-                .collect::<Result<Vec<Expr>>>()?;
+                .map(|s| {
+                    rewrite_table_scans_in_expr(s.expr, known_rewrites)
+                        .map(|e| Sort::new(e, s.asc, s.nulls_first))
+                })
+                .collect::<Result<Vec<Sort>>>()?;
             Ok(Expr::WindowFunction(WindowFunction {
                 fun: wf.fun,
                 args,
@@ -522,13 +520,14 @@ fn rewrite_table_scans_in_expr(
                 is.negated,
             )))
         }
-        Expr::Wildcard { qualifier } => {
+        Expr::Wildcard { qualifier, options } => {
             if let Some(rewrite) = qualifier.as_ref().and_then(|q| known_rewrites.get(q)) {
                 Ok(Expr::Wildcard {
                     qualifier: Some(rewrite.clone()),
+                    options,
                 })
             } else {
-                Ok(Expr::Wildcard { qualifier })
+                Ok(Expr::Wildcard { qualifier, options })
             }
         }
         Expr::GroupingSet(gs) => match gs {
