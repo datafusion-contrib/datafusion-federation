@@ -1,4 +1,4 @@
-use std::{any::Any, sync::Arc};
+use std::{any::Any, borrow::Cow, sync::Arc};
 
 use async_trait::async_trait;
 use datafusion::{
@@ -70,7 +70,7 @@ impl TableProvider for FederatedTableProviderAdaptor {
 
         self.source.table_type()
     }
-    fn get_logical_plan(&self) -> Option<&LogicalPlan> {
+    fn get_logical_plan(&self) -> Option<Cow<LogicalPlan>> {
         if let Some(table_provider) = &self.table_provider {
             return table_provider
                 .get_logical_plan()

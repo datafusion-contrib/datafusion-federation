@@ -11,23 +11,23 @@ name = "datafusion_flight_sql_server"
 path = "src/lib.rs"
 
 [dependencies]
+arrow.workspace = true
+arrow-flight.workspace = true
 datafusion.workspace = true
-datafusion-substrait.workspace = true
 datafusion-federation = { workspace = true, features = ["sql"] }
+datafusion-substrait.workspace = true
 
 futures = "0.3.30"
-tonic = { version = "0.11.0", features = [
+log = "0.4.22"
+once_cell = "1.19.0"
+prost = "0.13.1"
+tonic = { version = "0.12.1", features = [
     "tls",
     "transport",
     "codegen",
     "prost",
 ] }
-prost = "0.12.3"
-arrow = "52.0.0"
-arrow-flight = { version = "52.2.0", features = ["flight-sql-experimental"] }
-log = "0.4.22"
-once_cell = "1.19.0"
 
 [dev-dependencies]
-tokio = { version = "1.39.3", features = ["full"] }
 datafusion-flight-sql-table-provider = { path = "../datafusion-flight-sql-table-provider" }
+tokio = { version = "1.39.3", features = ["full"] }

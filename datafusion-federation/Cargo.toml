@@ -21,17 +21,16 @@ no-default-features = true
 sql = []
 
 [dependencies]
-futures.workspace = true
+arrow-json.workspace = true
+async-stream.workspace = true
 async-trait.workspace = true
 datafusion.workspace = true
-async-stream.workspace = true
-arrow-json.workspace = true
-
+futures.workspace = true
 
 [dev-dependencies]
 tokio = { version = "1.39.3", features = ["full"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [[example]]
 name = "df-csv"
