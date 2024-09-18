@@ -3,6 +3,9 @@ mod plan_node;
 #[cfg(feature = "sql")]
 pub mod sql;
 mod table_provider;
+// TODO clean up this
+// TODO move schema_cast.rs to schema_cast directory
+pub mod schema_cast;
 
 use std::{
     fmt,
@@ -20,10 +23,6 @@ pub use plan_node::{
     FederatedPlanNode, FederatedPlanner, FederatedQueryPlanner, FederationPlanner,
 };
 pub use table_provider::{FederatedTableProviderAdaptor, FederatedTableSource};
-
-// TODO clean up this
-// TODO move schema_cast.rs to schema_cast directory
-pub mod schema_cast;
 
 pub fn default_session_state() -> SessionState {
     let rules = default_optimizer_rules();
