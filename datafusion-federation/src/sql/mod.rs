@@ -3,27 +3,28 @@ mod schema;
 
 use std::{any::Any, collections::HashMap, fmt, sync::Arc, vec};
 
-use arrow_schema::{Schema, SchemaRef};
 use async_trait::async_trait;
-use datafusion::execution::SessionState;
-use datafusion_common::{Column, Result};
-use datafusion_execution::{SendableRecordBatchStream, TaskContext};
-use datafusion_expr::{
-    expr::{
-        AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
-        WindowFunction,
+use datafusion::{
+    arrow::datatypes::{Schema, SchemaRef},
+    common::{Column, Result},
+    execution::{SendableRecordBatchStream, SessionState, TaskContext},
+    logical_expr::{
+        expr::{
+            AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
+            WindowFunction,
+        },
+        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
+        TryCast,
     },
-    Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
-    TryCast,
-};
-use datafusion_optimizer::{Optimizer, OptimizerConfig, OptimizerRule};
-use datafusion_physical_expr::EquivalenceProperties;
-use datafusion_physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
-};
-use datafusion_sql::{
-    unparser::{plan_to_sql, Unparser},
-    TableReference,
+    optimizer::{Optimizer, OptimizerConfig, OptimizerRule},
+    physical_expr::EquivalenceProperties,
+    physical_plan::{
+        DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+    },
+    sql::{
+        unparser::{plan_to_sql, Unparser},
+        TableReference,
+    },
 };
 
 pub use executor::{SQLExecutor, SQLExecutorRef};
@@ -717,15 +718,16 @@ mod tests {
     use super::*;
     use crate::FederatedTableProviderAdaptor;
 
-    use arrow_schema::{DataType, Field};
     use datafusion::{
-        catalog_common::MemorySchemaProvider, datasource::DefaultTableSource,
+        arrow::datatypes::{DataType, Field},
+        catalog::{SchemaProvider, TableProvider},
+        catalog_common::MemorySchemaProvider,
+        common::DataFusionError,
+        datasource::DefaultTableSource,
+        logical_expr::LogicalPlanBuilder,
         prelude::SessionContext,
+        sql::unparser::dialect::{DefaultDialect, Dialect},
     };
-    use datafusion_catalog::{SchemaProvider, TableProvider};
-    use datafusion_common::DataFusionError;
-    use datafusion_expr::LogicalPlanBuilder;
-    use datafusion_sql::unparser::dialect::{DefaultDialect, Dialect};
 
     struct TestSQLExecutor {}
 

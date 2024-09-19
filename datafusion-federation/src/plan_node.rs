@@ -7,12 +7,12 @@ use std::{
 
 use async_trait::async_trait;
 use datafusion::{
+    common::{DFSchemaRef, DataFusionError, Result},
     execution::{context::QueryPlanner, SessionState},
+    logical_expr::{Expr, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore},
+    physical_plan::ExecutionPlan,
     physical_planner::{DefaultPhysicalPlanner, ExtensionPlanner, PhysicalPlanner},
 };
-use datafusion_common::{DFSchemaRef, DataFusionError, Result};
-use datafusion_expr::{Expr, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore};
-use datafusion_physical_plan::ExecutionPlan;
 
 pub struct FederatedPlanNode {
     plan: LogicalPlan,

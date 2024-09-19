@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use datafusion::{
-    execution::SessionState,
+    arrow::datatypes::SchemaRef,
+    catalog::SchemaProvider,
+    common::{DataFusionError, Result},
+    execution::{SendableRecordBatchStream, SessionState},
+    physical_plan::stream::RecordBatchStreamAdapter,
     prelude::{CsvReadOptions, SessionContext},
+    sql::unparser::dialect::{DefaultDialect, Dialect},
 };
-use datafusion_catalog::SchemaProvider;
-use datafusion_common::{DataFusionError, Result};
-use datafusion_execution::SendableRecordBatchStream;
 use datafusion_federation::sql::{SQLExecutor, SQLFederationProvider, SQLSchemaProvider};
-use datafusion_physical_plan::stream::RecordBatchStreamAdapter;
-use datafusion_sql::unparser::dialect::{DefaultDialect, Dialect};
 use futures::TryStreamExt;
 
 const CSV_PATH: &str = "./examples/test.csv";

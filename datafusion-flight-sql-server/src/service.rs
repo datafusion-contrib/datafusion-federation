@@ -1,6 +1,5 @@
 use std::{pin::Pin, sync::Arc};
 
-use arrow_array::{ArrayRef, RecordBatch, StringArray};
 use arrow_flight::sql::{
     self,
     server::{FlightSqlService as ArrowFlightSqlService, PeekableFlightDataStream},
@@ -22,15 +21,18 @@ use arrow_flight::{
     Action, FlightDescriptor, FlightEndpoint, FlightInfo, HandshakeRequest, HandshakeResponse,
     IpcMessage, SchemaAsIpc, Ticket,
 };
-use arrow_ipc::writer::IpcWriteOptions;
-use arrow_schema::{ArrowError, DataType, Field, Schema, SchemaRef};
 use datafusion::{
-    execution::SessionState,
+    arrow::{
+        array::{ArrayRef, RecordBatch, StringArray},
+        datatypes::{DataType, Field, Schema, SchemaRef},
+        error::ArrowError,
+        ipc::writer::IpcWriteOptions,
+    },
+    common::{DataFusionError, Result as DataFusionResult},
+    execution::{SendableRecordBatchStream, SessionState},
+    logical_expr::{LogicalPlan, TableType},
     prelude::{DataFrame, SQLOptions, SessionContext},
 };
-use datafusion_common::{DataFusionError, Result as DataFusionResult};
-use datafusion_execution::SendableRecordBatchStream;
-use datafusion_expr::{LogicalPlan, TableType};
 use datafusion_substrait::{
     logical_plan::consumer::from_substrait_plan, serializer::deserialize_bytes,
 };

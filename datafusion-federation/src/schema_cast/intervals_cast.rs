@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
-use arrow_array::{
-    builder::{IntervalDayTimeBuilder, IntervalYearMonthBuilder},
-    types::{IntervalDayTimeType, IntervalYearMonthType},
-    Array, ArrayRef, IntervalMonthDayNanoArray,
+use datafusion::arrow::{
+    array::{
+        Array, ArrayRef, IntervalDayTimeBuilder, IntervalMonthDayNanoArray,
+        IntervalYearMonthBuilder,
+    },
+    datatypes::{IntervalDayTimeType, IntervalYearMonthType},
+    error::ArrowError,
 };
-use arrow_schema::ArrowError;
 
 pub(crate) fn cast_interval_monthdaynano_to_yearmonth(
     interval_monthdaynano_array: &dyn Array,
@@ -78,11 +80,12 @@ mod test {
     use super::*;
     use crate::schema_cast::record_convert::try_cast_to;
 
-    use arrow_array::{
-        types::{IntervalDayTime, IntervalMonthDayNano},
-        IntervalDayTimeArray, IntervalYearMonthArray, RecordBatch,
+    use datafusion::arrow::{
+        array::{IntervalDayTimeArray, IntervalYearMonthArray, RecordBatch},
+        datatypes::{
+            DataType, Field, IntervalDayTime, IntervalMonthDayNano, IntervalUnit, Schema, SchemaRef,
+        },
     };
-    use arrow_schema::{DataType, Field, IntervalUnit, Schema, SchemaRef};
 
     fn input_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use datafusion::datasource::source_as_provider;
-use datafusion_common::{
-    not_impl_err,
-    tree_node::{Transformed, TreeNode, TreeNodeRecursion},
-    Result,
+use datafusion::{
+    common::{
+        not_impl_err,
+        tree_node::{Transformed, TreeNode, TreeNodeRecursion},
+        Result,
+    },
+    datasource::source_as_provider,
+    logical_expr::{Expr, Extension, LogicalPlan, Projection, TableScan, TableSource},
+    optimizer::{Optimizer, OptimizerConfig, OptimizerRule},
 };
-use datafusion_expr::{Expr, Extension, LogicalPlan, Projection, TableScan, TableSource};
-use datafusion_optimizer::{Optimizer, OptimizerConfig, OptimizerRule};
 
 use crate::{
     FederatedTableProviderAdaptor, FederatedTableSource, FederationProvider, FederationProviderRef,

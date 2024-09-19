@@ -10,8 +10,10 @@ use std::{
     sync::Arc,
 };
 
-use datafusion::execution::{SessionState, SessionStateBuilder};
-use datafusion_optimizer::{Optimizer, OptimizerRule};
+use datafusion::{
+    execution::{SessionState, SessionStateBuilder},
+    optimizer::{Optimizer, OptimizerRule},
+};
 pub use optimizer::{get_table_source, FederationOptimizerRule};
 pub use plan_node::{
     FederatedPlanNode, FederatedPlanner, FederatedQueryPlanner, FederationPlanner,

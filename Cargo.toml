@@ -17,19 +17,11 @@ repository = "https://github.com/datafusion-contrib/datafusion-federation"
 [workspace.dependencies]
 datafusion-federation = { path = "datafusion-federation", version = "0.2.1" }
 
-arrow-array = "53.0.0"
-arrow-cast = "53.0.0"
 arrow-flight = { version = "53.0.0", features = ["flight-sql-experimental"] }
-arrow-ipc = "53.0.0"
-arrow-json = "53.0.0"
 arrow-schema = "53.0.0"
-datafusion = "42.0.0"
-datafusion-catalog = "42.0.0"
+datafusion = { version = "42.0.0", default-features = false }
 datafusion-common = "42.0.0"
 datafusion-execution = "42.0.0"
-datafusion-expr = "42.0.0"
-datafusion-optimizer = "42.0.0"
-datafusion-physical-expr = "42.0.0"
 datafusion-physical-plan = "42.0.0"
 datafusion-sql = "42.0.0"
 datafusion-substrait = "42.0.0"

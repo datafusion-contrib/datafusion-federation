@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
-use arrow_array::{Array, RecordBatch};
-use arrow_cast::cast;
-use arrow_schema::{ArrowError, DataType, IntervalUnit, SchemaRef};
+use datafusion::arrow::{
+    array::{Array, RecordBatch},
+    compute::cast,
+    datatypes::{DataType, IntervalUnit, SchemaRef},
+    error::ArrowError,
+};
 
 use super::{
     intervals_cast::{
@@ -105,8 +108,10 @@ pub fn try_cast_to(record_batch: RecordBatch, expected_schema: SchemaRef) -> Res
 mod test {
     use super::*;
 
-    use arrow_array::{Int32Array, StringArray};
-    use arrow_schema::{Field, Schema, TimeUnit};
+    use datafusion::arrow::{
+        array::{Int32Array, StringArray},
+        datatypes::{Field, Schema, TimeUnit},
+    };
 
     fn schema() -> SchemaRef {
         Arc::new(Schema::new(vec![

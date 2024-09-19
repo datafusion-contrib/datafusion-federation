@@ -1,9 +1,11 @@
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use core::fmt;
-use datafusion_common::Result;
-use datafusion_execution::SendableRecordBatchStream;
-use datafusion_sql::{sqlparser::ast, unparser::dialect::Dialect};
+use datafusion::{
+    arrow::datatypes::SchemaRef,
+    common::Result,
+    execution::SendableRecordBatchStream,
+    sql::{sqlparser::ast, unparser::dialect::Dialect},
+};
 use std::sync::Arc;
 
 pub type SQLExecutorRef = Arc<dyn SQLExecutor>;
