@@ -29,7 +29,7 @@ arrow-json.workspace = true
 
 
 [dev-dependencies]
-tokio = { version = "1.39.3", features = ["full"] }
+tokio.workspace = true
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing = "0.1.40"
 

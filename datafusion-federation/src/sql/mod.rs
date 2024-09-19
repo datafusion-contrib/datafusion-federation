@@ -11,8 +11,8 @@ use datafusion::{
     execution::{context::SessionState, TaskContext},
     logical_expr::{
         expr::{
-            AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
-            WindowFunction,
+            AggregateFunction, Alias, Exists, InList, InSubquery, PlannedReplaceSelectItem,
+            ScalarFunction, Sort, Unnest, WildcardOptions, WindowFunction,
         },
         Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
         TryCast,
@@ -419,14 +419,6 @@ fn rewrite_table_scans_in_expr(
                 try_cast.data_type,
             )))
         }
-        Expr::Sort(sort) => {
-            let expr = rewrite_table_scans_in_expr(*sort.expr, known_rewrites)?;
-            Ok(Expr::Sort(Sort::new(
-                Box::new(expr),
-                sort.asc,
-                sort.nulls_first,
-            )))
-        }
         Expr::ScalarFunction(sf) => {
             let args = sf
                 .args
@@ -453,8 +445,13 @@ fn rewrite_table_scans_in_expr(
                 .order_by
                 .map(|e| {
                     e.into_iter()
-                        .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
-                        .collect::<Result<Vec<Expr>>>()
+                        .map(|sort| {
+                            Ok(Sort {
+                                expr: rewrite_table_scans_in_expr(sort.expr, known_rewrites)?,
+                                ..sort
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()
                 })
                 .transpose()?;
             Ok(Expr::AggregateFunction(AggregateFunction {
@@ -480,8 +477,13 @@ fn rewrite_table_scans_in_expr(
             let order_by = wf
                 .order_by
                 .into_iter()
-                .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
-                .collect::<Result<Vec<Expr>>>()?;
+                .map(|sort| {
+                    Ok(Sort {
+                        expr: rewrite_table_scans_in_expr(sort.expr, known_rewrites)?,
+                        ..sort
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
             Ok(Expr::WindowFunction(WindowFunction {
                 fun: wf.fun,
                 args,
@@ -533,13 +535,30 @@ fn rewrite_table_scans_in_expr(
                 is.negated,
             )))
         }
-        Expr::Wildcard { qualifier } => {
+        Expr::Wildcard { qualifier, options } => {
+            let options = WildcardOptions {
+                replace: options
+                    .replace
+                    .map(|replace| -> Result<PlannedReplaceSelectItem> {
+                        Ok(PlannedReplaceSelectItem {
+                            planned_expressions: replace
+                                .planned_expressions
+                                .into_iter()
+                                .map(|expr| rewrite_table_scans_in_expr(expr, known_rewrites))
+                                .collect::<Result<Vec<_>>>()?,
+                            ..replace
+                        })
+                    })
+                    .transpose()?,
+                ..options
+            };
             if let Some(rewrite) = qualifier.as_ref().and_then(|q| known_rewrites.get(q)) {
                 Ok(Expr::Wildcard {
                     qualifier: Some(rewrite.clone()),
+                    options,
                 })
             } else {
-                Ok(Expr::Wildcard { qualifier })
+                Ok(Expr::Wildcard { qualifier, options })
             }
         }
         Expr::GroupingSet(gs) => match gs {
