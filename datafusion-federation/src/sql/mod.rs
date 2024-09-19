@@ -29,7 +29,7 @@ use datafusion::{
     },
 };
 
-pub use executor::{SQLExecutor, SQLExecutorRef};
+pub use executor::{AstAnalyzer, SQLExecutor, SQLExecutorRef};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider, SQLTableSource};
 
 use crate::{
