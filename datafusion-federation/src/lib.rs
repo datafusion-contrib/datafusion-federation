@@ -1,11 +1,9 @@
 mod optimizer;
 mod plan_node;
+pub mod schema_cast;
 #[cfg(feature = "sql")]
 pub mod sql;
 mod table_provider;
-// TODO clean up this
-// TODO move schema_cast.rs to schema_cast directory
-pub mod schema_cast;
 
 use std::{
     fmt,
