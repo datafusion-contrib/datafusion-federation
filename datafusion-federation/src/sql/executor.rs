@@ -11,14 +11,19 @@ pub type AstAnalyzer = Box<dyn Fn(ast::Statement) -> Result<ast::Statement>>;
 
 #[async_trait]
 pub trait SQLExecutor: Sync + Send {
-    // Context
     /// Executor name
     fn name(&self) -> &str;
+
     /// Executor compute context allows differentiating the remote compute context
     /// such as authorization or active database.
+    ///
+    /// Note: returning None here may cause incorrect federation with other providers of the
+    /// same name that also have a compute_context of None.
+    /// Instead try to return a unique string that will never match any other
+    /// provider's context.
     fn compute_context(&self) -> Option<String>;
 
-    // The specific SQL dialect (currently supports 'sqlite', 'postgres', 'flight')
+    /// The specific SQL dialect (currently supports 'sqlite', 'postgres', 'flight')
     fn dialect(&self) -> Arc<dyn Dialect>;
 
     /// Returns an AST analyzer specific for this engine to modify the AST before execution
@@ -26,14 +31,13 @@ pub trait SQLExecutor: Sync + Send {
         None
     }
 
-    // Execution
     /// Execute a SQL query
     fn execute(&self, query: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream>;
 
-    // Schema inference
     /// Returns the tables provided by the remote
     async fn table_names(&self) -> Result<Vec<String>>;
-    /// Returns the schema of table_name within this SQLExecutor
+
+    /// Returns the schema of table_name within this [`SQLExecutor`]
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef>;
 }
 

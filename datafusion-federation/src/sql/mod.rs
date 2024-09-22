@@ -6,7 +6,7 @@ use std::{any::Any, collections::HashMap, fmt, sync::Arc, vec};
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
-    common::Column,
+    common::{tree_node::Transformed, Column},
     error::Result,
     execution::{context::SessionState, TaskContext},
     logical_expr::{
@@ -83,15 +83,20 @@ impl SQLFederationOptimizerRule {
 }
 
 impl OptimizerRule for SQLFederationOptimizerRule {
-    fn try_optimize(
+    /// Try to rewrite `plan` to an optimized form, returning `Transformed::yes`
+    /// if the plan was rewritten and `Transformed::no` if it was not.
+    ///
+    /// Note: this function is only called if [`Self::supports_rewrite`] returns
+    /// true. Otherwise the Optimizer calls  [`Self::try_optimize`]
+    fn rewrite(
         &self,
-        plan: &LogicalPlan,
+        plan: LogicalPlan,
         _config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
+    ) -> Result<Transformed<LogicalPlan>> {
         if let LogicalPlan::Extension(Extension { ref node }) = plan {
             if node.name() == "Federated" {
                 // Avoid attempting double federation
-                return Ok(None);
+                return Ok(Transformed::no(plan));
             }
         }
         // Simply accept the entire plan for now
@@ -99,7 +104,7 @@ impl OptimizerRule for SQLFederationOptimizerRule {
         let ext_node = Extension {
             node: Arc::new(fed_plan),
         };
-        Ok(Some(LogicalPlan::Extension(ext_node)))
+        Ok(Transformed::yes(LogicalPlan::Extension(ext_node)))
     }
 
     /// A human readable name for this analyzer rule
@@ -107,10 +112,9 @@ impl OptimizerRule for SQLFederationOptimizerRule {
         "federate_sql"
     }
 
-    /// XXX
     /// Does this rule support rewriting owned plans (rather than by reference)?
     fn supports_rewrite(&self) -> bool {
-        false
+        true
     }
 }
 
