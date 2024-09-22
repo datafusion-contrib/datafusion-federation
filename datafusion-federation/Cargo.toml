@@ -27,7 +27,6 @@ datafusion.workspace = true
 async-stream.workspace = true
 arrow-json.workspace = true
 
-
 [dev-dependencies]
 tokio.workspace = true
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
@@ -36,4 +35,9 @@ tracing = "0.1.40"
 [[example]]
 name = "df-csv"
 path = "examples/df-csv.rs"
+required-features = ["sql"]
+
+[[example]]
+name = "df-csv-advanced"
+path = "examples/df-csv-advanced.rs"
 required-features = ["sql"]
