@@ -90,7 +90,6 @@ impl MockPostgresExecutor {
     }
 }
 
-
 #[async_trait]
 impl SQLExecutor for MockPostgresExecutor {
     fn name(&self) -> &str {
