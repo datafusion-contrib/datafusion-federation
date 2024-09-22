@@ -118,17 +118,8 @@ async fn main() {
     // Get the default optimizer rules
     let mut rules = Optimizer::new().rules;
 
-    // Create a new rule for the federation optimizer
-    let federation_rule = Arc::new(FederationOptimizerRule::new());
-
-    // Insert the FederationOptimizerRule after the ScalarSubqueryToJoin.
-    // This ensures ScalarSubquery are replaced before we try to federate.
-    let optimizer_rule_pos = rules
-        .iter()
-        .position(|x| x.name() == "scalar_subquery_to_join")
-        .expect("Could not locate ScalarSubqueryToJoin");
-    // Insert the FederationOptimizerRule into the rules
-    rules.insert(optimizer_rule_pos + 1, federation_rule);
+    // Create a new federation optimizer rule and add it to the default rules
+    rules.push(Arc::new(FederationOptimizerRule::new()));
 
     // Create a new SessionState with the optimizer rule we created above
     let state = SessionStateBuilder::new()
