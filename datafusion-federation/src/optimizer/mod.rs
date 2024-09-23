@@ -1,132 +1,65 @@
+mod scan_result;
+
 use std::sync::Arc;
 
-use datafusion::common::not_impl_err;
-use datafusion::common::tree_node::{Transformed, TreeNode, TreeNodeRecursion};
-use datafusion::logical_expr::Extension;
-use datafusion::optimizer::optimizer::Optimizer;
-use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::{
+    common::not_impl_err,
+    common::tree_node::{Transformed, TreeNode, TreeNodeRecursion},
     datasource::source_as_provider,
     error::Result,
-    logical_expr::{Expr, LogicalPlan, Projection, TableScan, TableSource},
+    logical_expr::{Expr, Extension, LogicalPlan, Projection, TableScan, TableSource},
+    optimizer::optimizer::{Optimizer, OptimizerConfig, OptimizerRule},
 };
 
 use crate::{
     FederatedTableProviderAdaptor, FederatedTableSource, FederationProvider, FederationProviderRef,
 };
 
+use scan_result::ScanResult;
+
+/// An optimizer rule to identifying sub-plans to federate
+///
+/// The optimizer logic walks over the plan, look for the largest subtrees that only have
+/// TableScans from the same [`FederationProvider`]. There 'largest sub-trees' are passed to their
+/// respective [`FederationProvider::optimizer`].
 #[derive(Default)]
 pub struct FederationOptimizerRule {}
 
 impl OptimizerRule for FederationOptimizerRule {
-    // Walk over the plan, look for the largest subtrees that only have
-    // TableScans from the same FederationProvider.
-    // There 'largest sub-trees' are passed to their respective FederationProvider.optimizer.
-    fn try_optimize(
+    /// Try to rewrite `plan` to an optimized form, returning `Transformed::yes`
+    /// if the plan was rewritten and `Transformed::no` if it was not.
+    ///
+    /// Note: this function is only called if [`Self::supports_rewrite`] returns
+    /// true. Otherwise the Optimizer calls  [`Self::try_optimize`]
+    fn rewrite(
         &self,
-        plan: &LogicalPlan,
+        plan: LogicalPlan,
         config: &dyn OptimizerConfig,
-    ) -> Result<Option<LogicalPlan>> {
-        let (optimized, _) = self.optimize_plan_recursively(plan, true, config)?;
-        Ok(optimized)
+    ) -> Result<Transformed<LogicalPlan>> {
+        match self.optimize_plan_recursively(&plan, true, config)? {
+            (Some(optimized_plan), _) => Ok(Transformed::yes(optimized_plan)),
+            (None, _) => Ok(Transformed::no(plan)),
+        }
+    }
+
+    /// Does this rule support rewriting owned plans (rather than by reference)?
+    fn supports_rewrite(&self) -> bool {
+        true
     }
 
     /// A human readable name for this optimizer rule
     fn name(&self) -> &str {
         "federation_optimizer_rule"
     }
-
-    /// XXX
-    /// Does this rule support rewriting owned plans (rather than by reference)?
-    fn supports_rewrite(&self) -> bool {
-        false
-    }
-}
-
-enum ScanResult {
-    None,
-    Distinct(FederationProviderRef),
-    Ambiguous,
-}
-
-impl ScanResult {
-    fn merge(&mut self, other: Self) {
-        match (&self, &other) {
-            (_, ScanResult::None) => {}
-            (ScanResult::None, _) => *self = other,
-            (ScanResult::Ambiguous, _) | (_, ScanResult::Ambiguous) => {
-                *self = ScanResult::Ambiguous
-            }
-            (ScanResult::Distinct(provider), ScanResult::Distinct(other_provider)) => {
-                if provider != other_provider {
-                    *self = ScanResult::Ambiguous
-                }
-            }
-        }
-    }
-    fn add(&mut self, provider: Option<FederationProviderRef>) {
-        self.merge(ScanResult::from(provider))
-    }
-    fn is_ambiguous(&self) -> bool {
-        matches!(self, ScanResult::Ambiguous)
-    }
-    fn is_none(&self) -> bool {
-        matches!(self, ScanResult::None)
-    }
-    fn is_some(&self) -> bool {
-        !self.is_none()
-    }
-    fn unwrap(self) -> Option<FederationProviderRef> {
-        match self {
-            ScanResult::None => None,
-            ScanResult::Distinct(provider) => Some(provider),
-            ScanResult::Ambiguous => panic!("called `ScanResult::unwrap()` on a `Ambiguous` value"),
-        }
-    }
-    fn check_recursion(&self) -> TreeNodeRecursion {
-        if self.is_ambiguous() {
-            TreeNodeRecursion::Stop
-        } else {
-            TreeNodeRecursion::Continue
-        }
-    }
-}
-
-impl From<Option<FederationProviderRef>> for ScanResult {
-    fn from(provider: Option<FederationProviderRef>) -> Self {
-        match provider {
-            Some(provider) => ScanResult::Distinct(provider),
-            None => ScanResult::None,
-        }
-    }
-}
-
-impl PartialEq<Option<FederationProviderRef>> for ScanResult {
-    fn eq(&self, other: &Option<FederationProviderRef>) -> bool {
-        match (self, other) {
-            (ScanResult::None, None) => true,
-            (ScanResult::Distinct(provider), Some(other_provider)) => provider == other_provider,
-            _ => false,
-        }
-    }
-}
-
-impl Clone for ScanResult {
-    fn clone(&self) -> Self {
-        match self {
-            ScanResult::None => ScanResult::None,
-            ScanResult::Distinct(provider) => ScanResult::Distinct(provider.clone()),
-            ScanResult::Ambiguous => ScanResult::Ambiguous,
-        }
-    }
 }
 
 impl FederationOptimizerRule {
+    /// Creates a new [`FederationOptimizerRule`]
     pub fn new() -> Self {
         Self::default()
     }
 
-    // scans a plan to see if it belongs to a single FederationProvider
+    /// Scans a plan to see if it belongs to a single [`FederationProvider`].
     fn scan_plan_recursively(&self, plan: &LogicalPlan) -> Result<ScanResult> {
         let mut sole_provider: ScanResult = ScanResult::None;
 
@@ -147,7 +80,7 @@ impl FederationOptimizerRule {
         Ok(sole_provider)
     }
 
-    // scans a plan's expressions to see if it belongs to a single FederationProvider
+    /// Scans a plan's expressions to see if it belongs to a single [`FederationProvider`].
     fn scan_plan_exprs(&self, plan: &LogicalPlan) -> Result<ScanResult> {
         let mut sole_provider: ScanResult = ScanResult::None;
 
@@ -164,7 +97,7 @@ impl FederationOptimizerRule {
         Ok(sole_provider)
     }
 
-    // scans an expression to see if it belongs to a single FederationProvider
+    /// scans an expression to see if it belongs to a single [`FederationProvider`]
     fn scan_expr_recursively(&self, expr: &Expr) -> Result<ScanResult> {
         let mut sole_provider: ScanResult = ScanResult::None;
 
@@ -192,18 +125,18 @@ impl FederationOptimizerRule {
         Ok(sole_provider)
     }
 
-    // optimize_recursively recursively finds the largest sub-plans that can be federated
-    // to a single FederationProvider.
-    // Returns a plan if a sub-tree was federated, otherwise None.
-    // Returns a ScanResult of all FederationProviders in the subtree.
+    /// Recursively finds the largest sub-plans that can be federated
+    /// to a single FederationProvider.
+    ///
+    /// Returns a plan if a sub-tree was federated, otherwise None.
+    ///
+    /// Returns a ScanResult of all FederationProviders in the subtree.
     fn optimize_plan_recursively(
         &self,
         plan: &LogicalPlan,
         is_root: bool,
         _config: &dyn OptimizerConfig,
     ) -> Result<(Option<LogicalPlan>, ScanResult)> {
-        // Used to track if all sources, including tableScan, plan inputs and
-        // expressions, represents an un-ambiguous or 'sole' FederationProvider
         let mut sole_provider: ScanResult = ScanResult::None;
 
         if let LogicalPlan::Extension(Extension { ref node }) = plan {
@@ -322,7 +255,7 @@ impl FederationOptimizerRule {
         Ok((Some(new_plan), ScanResult::Ambiguous))
     }
 
-    // Optimize all exprs of a plan
+    /// Optimizes all exprs of a plan
     fn optimize_plan_exprs(
         &self,
         plan: &LogicalPlan,
@@ -339,8 +272,8 @@ impl FederationOptimizerRule {
             .collect::<Result<Vec<_>>>()
     }
 
-    // recursively optimize expressions
-    // Current logic: individually federate every sub-query.
+    /// recursively optimize expressions
+    /// Current logic: individually federate every sub-query.
     fn optimize_expr_recursively(
         &self,
         expr: Expr,
@@ -364,8 +297,8 @@ impl FederationOptimizerRule {
     }
 }
 
-// NopFederationProvider is used to represent tables that are not federated, but
-// are resolved by DataFusion. This simplifies the logic of the optimizer rule.
+/// NopFederationProvider is used to represent tables that are not federated, but
+/// are resolved by DataFusion. This simplifies the logic of the optimizer rule.
 struct NopFederationProvider {}
 
 impl FederationProvider for NopFederationProvider {
