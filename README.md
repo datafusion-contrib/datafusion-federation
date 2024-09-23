@@ -29,6 +29,9 @@ referred to as 'query federation'.
 Check out the [examples](./datafusion-federation/examples/) to get a feel for
 how it works.
 
+For a complete step-by-step example of how federation works, you can check the
+example [here](./datafusion-federation/examples/df-csv-advanced.rs). 
+
 ## Potential use-cases:
 
 - Querying across SQLite, MySQL, PostgreSQL, ...
