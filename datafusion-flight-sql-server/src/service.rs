@@ -109,7 +109,7 @@ impl FlightSqlService {
             Request::from_parts(metadata, extensions, msg),
             FlightSqlSessionContext {
                 inner: ctx,
-                sql_options: self.sql_options.clone(),
+                sql_options: self.sql_options,
             },
         ))
     }
@@ -133,7 +133,7 @@ struct FlightSqlSessionContext {
 impl FlightSqlSessionContext {
     async fn sql_to_logical_plan(&self, sql: &str) -> DataFusionResult<LogicalPlan> {
         let plan = self.inner.state().create_logical_plan(sql).await?;
-        let verifier = self.sql_options.clone().unwrap_or_default();
+        let verifier = self.sql_options.unwrap_or_default();
         verifier.verify_plan(&plan)?;
         Ok(plan)
     }
