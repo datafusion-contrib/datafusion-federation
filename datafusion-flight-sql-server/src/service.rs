@@ -52,22 +52,34 @@ use super::state::{CommandTicket, QueryHandle};
 
 type Result<T, E = Status> = std::result::Result<T, E>;
 
-// FlightSqlService is a basic stateless FlightSqlService implementation.
+/// FlightSqlService is a basic stateless FlightSqlService implementation.
 pub struct FlightSqlService {
     provider: Box<dyn SessionStateProvider>,
+    sql_options: Option<SQLOptions>,
 }
 
 impl FlightSqlService {
-    // Creates a new FlightSqlService with a static SessionState.
+    /// Creates a new FlightSqlService with a static SessionState.
     pub fn new(state: SessionState) -> Self {
+        Self::new_with_provider(Box::new(StaticSessionStateProvider::new(state)))
+    }
+
+    /// Creates a new FlightSqlService with a SessionStateProvider.
+    pub fn new_with_provider(provider: Box<dyn SessionStateProvider>) -> Self {
         Self {
-            provider: Box::new(StaticSessionStateProvider::new(state)),
+            provider,
+            sql_options: None,
         }
     }
 
-    // Creates a new FlightSqlService with a SessionStateProvider.
-    pub fn new_with_provider(provider: Box<dyn SessionStateProvider>) -> Self {
-        Self { provider }
+    /// Replaces the sql_options with the provided options.
+    /// These options are used to verify all SQL queries.
+    /// When None the default [`SQLOptions`] are used.
+    pub fn with_sql_options(self, sql_options: Option<SQLOptions>) -> Self {
+        Self {
+            sql_options,
+            ..self
+        }
     }
 
     // Federate substrait plans instead of SQL
@@ -95,7 +107,10 @@ impl FlightSqlService {
         let (metadata, extensions, _) = inspect_request.into_parts();
         Ok((
             Request::from_parts(metadata, extensions, msg),
-            FlightSqlSessionContext { inner: ctx },
+            FlightSqlSessionContext {
+                inner: ctx,
+                sql_options: self.sql_options.clone(),
+            },
         ))
     }
 }
@@ -112,12 +127,13 @@ static GET_TABLE_TYPES_SCHEMA: Lazy<SchemaRef> = Lazy::new(|| {
 
 struct FlightSqlSessionContext {
     inner: SessionContext,
+    sql_options: Option<SQLOptions>,
 }
 
 impl FlightSqlSessionContext {
     async fn sql_to_logical_plan(&self, sql: &str) -> DataFusionResult<LogicalPlan> {
         let plan = self.inner.state().create_logical_plan(sql).await?;
-        let verifier = SQLOptions::new();
+        let verifier = self.sql_options.clone().unwrap_or_default();
         verifier.verify_plan(&plan)?;
         Ok(plan)
     }
