@@ -21,6 +21,7 @@ log = "0.4.22"
 once_cell = "1.19.0"
 prost = "0.13.1"
 tonic.workspace = true
+async-trait.workspace = true 
 
 [dev-dependencies]
 tokio.workspace = true
