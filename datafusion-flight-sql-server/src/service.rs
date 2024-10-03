@@ -97,11 +97,14 @@ impl FlightSqlService {
         Ok(Server::builder().add_service(svc).serve(addr).await?)
     }
 
-    fn new_context<T>(&self, request: Request<T>) -> Result<(Request<T>, FlightSqlSessionContext)> {
+    async fn new_context<T>(
+        &self,
+        request: Request<T>,
+    ) -> Result<(Request<T>, FlightSqlSessionContext)> {
         let (metadata, extensions, msg) = request.into_parts();
         let inspect_request = Request::from_parts(metadata, extensions, ());
 
-        let state = self.provider.new_context(&inspect_request)?;
+        let state = self.provider.new_context(&inspect_request).await?;
         let ctx = SessionContext::new_with_state(state);
 
         let (metadata, extensions, _) = inspect_request.into_parts();
@@ -168,7 +171,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
         _message: Any,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
-        let (request, ctx) = self.new_context(request)?;
+        let (request, ctx) = self.new_context(request).await?;
 
         let ticket = CommandTicket::try_decode(request.into_inner().ticket)
             .map_err(flight_error_to_status)?;
@@ -257,7 +260,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         query: CommandStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
-        let (request, ctx) = self.new_context(request)?;
+        let (request, ctx) = self.new_context(request).await?;
 
         let sql = &query.query;
         info!("get_flight_info_statement with query={sql}");
@@ -294,7 +297,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_substrait_plan");
-        let (request, ctx) = self.new_context(request)?;
+        let (request, ctx) = self.new_context(request).await?;
 
         let substrait_bytes = &query
             .plan
@@ -332,7 +335,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         cmd: CommandPreparedStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
-        let (request, ctx) = self.new_context(request)?;
+        let (request, ctx) = self.new_context(request).await?;
 
         let handle = QueryHandle::try_decode(cmd.prepared_statement_handle.clone())
             .map_err(|e| Status::internal(format!("Error decoding handle: {e}")))?;
@@ -372,7 +375,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_catalogs");
-        let (request, _ctx) = self.new_context(request)?;
+        let (request, _ctx) = self.new_context(request).await?;
 
         let flight_descriptor = request.into_inner();
         let ticket = Ticket {
@@ -395,7 +398,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_schemas");
-        let (request, _ctx) = self.new_context(request)?;
+        let (request, _ctx) = self.new_context(request).await?;
         let flight_descriptor = request.into_inner();
         let ticket = Ticket {
             ticket: query.as_any().encode_to_vec().into(),
@@ -417,7 +420,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_tables");
-        let (request, _ctx) = self.new_context(request)?;
+        let (request, _ctx) = self.new_context(request).await?;
 
         let flight_descriptor = request.into_inner();
         let ticket = Ticket {
@@ -440,7 +443,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_table_types");
-        let (request, _ctx) = self.new_context(request)?;
+        let (request, _ctx) = self.new_context(request).await?;
 
         let flight_descriptor = request.into_inner();
         let ticket = Ticket {
@@ -463,7 +466,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_sql_info");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement CommandGetSqlInfo"))
     }
@@ -474,7 +477,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_primary_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement get_flight_info_primary_keys",
@@ -487,7 +490,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_exported_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement get_flight_info_exported_keys",
@@ -500,7 +503,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_imported_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement get_flight_info_imported_keys",
@@ -513,7 +516,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_cross_reference");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement get_flight_info_cross_reference",
@@ -526,7 +529,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>> {
         info!("get_flight_info_xdbc_type_info");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement get_flight_info_xdbc_type_info",
@@ -539,7 +542,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_statement");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_statement"))
     }
@@ -550,7 +553,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_prepared_statement");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_prepared_statement"))
     }
@@ -561,7 +564,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_catalogs");
-        let (_request, ctx) = self.new_context(request)?;
+        let (_request, ctx) = self.new_context(request).await?;
         let catalog_names = ctx.inner.catalog_names();
 
         let mut builder = query.into_builder();
@@ -583,7 +586,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_schemas");
-        let (_request, ctx) = self.new_context(request)?;
+        let (_request, ctx) = self.new_context(request).await?;
         let catalog_name = query.catalog.clone();
         // Append all schemas to builder, the builder handles applying the filters.
         let mut builder = query.into_builder();
@@ -610,7 +613,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_tables");
-        let (_request, ctx) = self.new_context(request)?;
+        let (_request, ctx) = self.new_context(request).await?;
         let catalog_name = query.catalog.clone();
         let mut builder = query.into_builder();
         // Append all schemas/tables to builder, the builder handles applying the filters.
@@ -653,7 +656,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_table_types");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         // Report all variants of table types that datafusion uses.
         let table_types: ArrayRef = Arc::new(StringArray::from(
@@ -678,7 +681,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_sql_info");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_sql_info"))
     }
@@ -689,7 +692,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_primary_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_primary_keys"))
     }
@@ -700,7 +703,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_exported_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_exported_keys"))
     }
@@ -711,7 +714,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_imported_keys");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_imported_keys"))
     }
@@ -722,7 +725,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_cross_reference");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_cross_reference"))
     }
@@ -733,7 +736,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>> {
         info!("do_get_xdbc_type_info");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_get_xdbc_type_info"))
     }
@@ -744,7 +747,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
         info!("do_put_statement_update");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_put_statement_update"))
     }
@@ -755,7 +758,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<PeekableFlightDataStream>,
     ) -> Result<DoPutPreparedStatementResult, Status> {
         info!("do_put_prepared_statement_query");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement do_put_prepared_statement_query",
@@ -768,7 +771,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
         info!("do_put_prepared_statement_update");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         // statements like "CREATE TABLE.." or "SET datafusion.nnn.." call this function
         // and we are required to return some row count here
@@ -781,7 +784,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<PeekableFlightDataStream>,
     ) -> Result<i64, Status> {
         info!("do_put_prepared_statement_update");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement do_put_prepared_statement_update",
@@ -793,7 +796,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         query: ActionCreatePreparedStatementRequest,
         request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
-        let (_, ctx) = self.new_context(request)?;
+        let (_, ctx) = self.new_context(request).await?;
 
         let sql = query.query.clone();
         info!(
@@ -825,7 +828,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         query: ActionClosePreparedStatementRequest,
         request: Request<Action>,
     ) -> Result<(), Status> {
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         let handle = query.prepared_statement_handle.as_ref();
         if let Ok(handle) = std::str::from_utf8(handle) {
@@ -845,7 +848,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
         info!("do_action_create_prepared_substrait_plan");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented(
             "Implement do_action_create_prepared_substrait_plan",
@@ -857,7 +860,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         _query: ActionBeginTransactionRequest,
         request: Request<Action>,
     ) -> Result<ActionBeginTransactionResult, Status> {
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         info!("do_action_begin_transaction");
         Err(Status::unimplemented(
@@ -871,7 +874,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Action>,
     ) -> Result<(), Status> {
         info!("do_action_end_transaction");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_action_end_transaction"))
     }
@@ -882,7 +885,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Action>,
     ) -> Result<ActionBeginSavepointResult, Status> {
         info!("do_action_begin_savepoint");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_action_begin_savepoint"))
     }
@@ -893,7 +896,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Action>,
     ) -> Result<(), Status> {
         info!("do_action_end_savepoint");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_action_end_savepoint"))
     }
@@ -904,7 +907,7 @@ impl ArrowFlightSqlService for FlightSqlService {
         request: Request<Action>,
     ) -> Result<ActionCancelQueryResult, Status> {
         info!("do_action_cancel_query");
-        let (_, _) = self.new_context(request)?;
+        let (_, _) = self.new_context(request).await?;
 
         Err(Status::unimplemented("Implement do_action_cancel_query"))
     }
