@@ -4,8 +4,7 @@ use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, Distribution, ExecutionPlan, ExecutionPlanProperties,
-    PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
 };
 use futures::StreamExt;
 use std::any::Any;
