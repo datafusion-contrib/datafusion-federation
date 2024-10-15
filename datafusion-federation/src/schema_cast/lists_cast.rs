@@ -1,4 +1,5 @@
 use arrow_json::ReaderBuilder;
+use datafusion::arrow::array::{GenericStringArray, OffsetSizeTrait};
 use datafusion::arrow::{
     array::{
         Array, ArrayRef, BooleanArray, BooleanBuilder, FixedSizeListBuilder, Float32Array,
@@ -193,13 +194,13 @@ macro_rules! cast_string_to_fixed_size_list_array {
     }};
 }
 
-pub(crate) fn cast_string_to_list(
+pub(crate) fn cast_string_to_list<StringOffsetSize: OffsetSizeTrait>(
     array: &dyn Array,
     list_item_field: &FieldRef,
 ) -> Result<ArrayRef, ArrowError> {
     let string_array = array
         .as_any()
-        .downcast_ref::<StringArray>()
+        .downcast_ref::<GenericStringArray<StringOffsetSize>>()
         .ok_or_else(|| {
             ArrowError::CastError(
                 "Failed to decode value: unable to downcast to StringArray".to_string(),
@@ -297,13 +298,13 @@ pub(crate) fn cast_string_to_list(
     }
 }
 
-pub(crate) fn cast_string_to_large_list(
+pub(crate) fn cast_string_to_large_list<StringOffsetSize: OffsetSizeTrait>(
     array: &dyn Array,
     list_item_field: &FieldRef,
 ) -> Result<ArrayRef, ArrowError> {
     let string_array = array
         .as_any()
-        .downcast_ref::<StringArray>()
+        .downcast_ref::<GenericStringArray<StringOffsetSize>>()
         .ok_or_else(|| {
             ArrowError::CastError(
                 "Failed to decode value: unable to downcast to StringArray".to_string(),
@@ -401,14 +402,14 @@ pub(crate) fn cast_string_to_large_list(
     }
 }
 
-pub(crate) fn cast_string_to_fixed_size_list(
+pub(crate) fn cast_string_to_fixed_size_list<StringOffsetSize: OffsetSizeTrait>(
     array: &dyn Array,
     list_item_field: &FieldRef,
     value_length: i32,
 ) -> Result<ArrayRef, ArrowError> {
     let string_array = array
         .as_any()
-        .downcast_ref::<StringArray>()
+        .downcast_ref::<GenericStringArray<StringOffsetSize>>()
         .ok_or_else(|| {
             ArrowError::CastError(
                 "Failed to decode value: unable to downcast to StringArray".to_string(),
