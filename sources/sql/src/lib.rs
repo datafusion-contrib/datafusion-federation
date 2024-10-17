@@ -6,15 +6,16 @@ use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
     common::Column,
     config::ConfigOptions,
-    error::Result,
+    error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{
+        self,
         expr::{
             AggregateFunction, Alias, Exists, InList, InSubquery, ScalarFunction, Sort, Unnest,
             WindowFunction,
         },
-        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan, Subquery,
-        TryCast,
+        Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, LogicalPlan,
+        LogicalPlanBuilder, Projection, Subquery, TryCast,
     },
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
@@ -145,13 +146,86 @@ fn rewrite_table_scans(
         .map(|i| rewrite_table_scans(i, known_rewrites))
         .collect::<Result<Vec<_>>>()?;
 
-    let mut new_expressions = vec![];
-    for expression in plan.expressions() {
-        let new_expr = rewrite_table_scans_in_expr(expression.clone(), known_rewrites)?;
-        new_expressions.push(new_expr);
+    match plan {
+        LogicalPlan::Unnest(unnest) => {
+            // The Union plan cannot be constructed from rewritten expressions. It requires specialized logic to handle
+            // the renaming in UNNEST columns and the corresponding column aliases in the underlying projection plan.
+            rewrite_unnest_plan(unnest, rewritten_inputs, known_rewrites)
+        }
+        _ => {
+            let mut new_expressions = vec![];
+            for expression in plan.expressions() {
+                let new_expr = rewrite_table_scans_in_expr(expression.clone(), known_rewrites)?;
+                new_expressions.push(new_expr);
+            }
+            let new_plan = plan.with_new_exprs(new_expressions, rewritten_inputs)?;
+            Ok(new_plan)
+        }
     }
+}
 
-    let new_plan = plan.with_new_exprs(new_expressions, rewritten_inputs)?;
+/// Rewrite an unnest plan to use the original federated table name.
+/// In a standard unnest plan, column names are typically referenced in projection columns by wrapping them
+/// in aliases such as "UNNEST(table_name.column_name)". `rewrite_table_scans_in_expr` does not handle alias
+/// rewriting so we manually collect the rewritten unnest column names/aliases and update the projection
+/// plan to ensure that the aliases reflect the new names.
+fn rewrite_unnest_plan(
+    unnest: &logical_expr::Unnest,
+    mut rewritten_inputs: Vec<LogicalPlan>,
+    known_rewrites: &mut HashMap<TableReference, TableReference>,
+) -> Result<LogicalPlan> {
+    // Unnest plan has a single input
+    let input = rewritten_inputs.remove(0);
+
+    let mut known_unnest_rewrites: HashMap<String, String> = HashMap::new();
+
+    // `exec_columns` represent columns to run UNNEST on: rewrite them and collect new names
+    let unnest_columns = unnest
+        .exec_columns
+        .iter()
+        .map(|c: &Column| {
+            match rewrite_table_scans_in_expr(Expr::Column(c.clone()), known_rewrites)? {
+                Expr::Column(column) => {
+                    known_unnest_rewrites.insert(c.name.clone(), column.name.clone());
+                    Ok(column)
+                }
+                _ => Err(DataFusionError::Plan(
+                    "Rewritten column expression must be a column".to_string(),
+                )),
+            }
+        })
+        .collect::<Result<Vec<Column>>>()?;
+
+    let LogicalPlan::Projection(projection) = input else {
+        return Err(DataFusionError::Plan(
+            "The input to the unnest plan should be a projection plan".to_string(),
+        ));
+    };
+
+    // rewrite aliases in inner projection; columns were rewritten via `rewrite_table_scans_in_expr``
+    let new_expressions = projection
+        .expr
+        .into_iter()
+        .map(|expr| match expr {
+            Expr::Alias(alias) => {
+                let name = match known_unnest_rewrites.get(&alias.name) {
+                    Some(name) => name,
+                    None => &alias.name,
+                };
+                Ok(Expr::Alias(Alias::new(*alias.expr, alias.relation, name)))
+            }
+            _ => Ok(expr),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let updated_unnest_inner_projection =
+        Projection::try_new(new_expressions, Arc::clone(&projection.input))?;
+
+    // reconstruct the unnest plan with updated projection and rewritten column names
+    let new_plan =
+        LogicalPlanBuilder::new(LogicalPlan::Projection(updated_unnest_inner_projection))
+            .unnest_columns_with_options(unnest_columns, unnest.options.clone())?
+            .build()?;
 
     Ok(new_plan)
 }
@@ -761,6 +835,11 @@ mod tests {
             Field::new("a", DataType::Int64, false),
             Field::new("b", DataType::Utf8, false),
             Field::new("c", DataType::Date32, false),
+            Field::new(
+                "d",
+                DataType::List(Arc::new(Field::new("item", DataType::Int64, true))),
+                false,
+            ),
         ]));
         let table_source = Arc::new(
             SQLTableSource::new_with_schema(
@@ -917,6 +996,33 @@ mod tests {
             (
                 "SELECT aapp_table FROM (SELECT a as aapp_table FROM app_table)",
                 r#"SELECT aapp_table FROM (SELECT remote_table.a AS aapp_table FROM remote_table)"#,
+            ),
+        ];
+
+        for test in tests {
+            test_sql(&ctx, test.0, test.1).await?;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rewrite_table_scans_unnest() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_df_context();
+
+        let tests = vec![
+            (
+                "SELECT UNNEST([1, 2, 2, 5, NULL]), b, c from app_table where a > 10 order by b limit 10;",
+                r#"SELECT UNNEST(make_array(1, 2, 2, 5, NULL)), remote_table.b, remote_table.c FROM remote_table WHERE (remote_table.a > 10) ORDER BY remote_table.b ASC NULLS LAST LIMIT 10"#,
+            ),
+            (
+                "SELECT UNNEST(app_table.d), b, c from app_table where a > 10 order by b limit 10;",
+                r#"SELECT UNNEST(remote_table.d), remote_table.b, remote_table.c FROM remote_table WHERE (remote_table.a > 10) ORDER BY remote_table.b ASC NULLS LAST LIMIT 10"#,
+            ),
+            (
+                "SELECT sum(b.x) AS total FROM (SELECT UNNEST(d) AS x from app_table where a > 0) AS b;",
+                r#"SELECT sum(b.x) AS total FROM (SELECT UNNEST(remote_table.d) AS x FROM remote_table WHERE (remote_table.a > 0)) AS b"#,
             ),
         ];
 
