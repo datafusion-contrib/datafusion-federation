@@ -115,7 +115,12 @@ impl FederationAnalyzerRule {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
+        let new_plan = match plan {
+            // Unnest returns columns to unnest as `expressions` but does not support passing them back to `with_new_exprs`.
+            // Instead, it uses data from its internal representation to create a new plan.
+            LogicalPlan::Unnest(_) => plan.with_new_exprs(vec![], new_inputs)?,
+            _ => plan.with_new_exprs(plan.expressions(), new_inputs)?,
+        };
 
         Ok((Some(new_plan), None))
     }
