@@ -8,6 +8,7 @@ use datafusion::optimizer::analyzer::Analyzer;
 
 mod analyzer;
 pub use analyzer::*;
+mod optimize;
 mod table_provider;
 pub use table_provider::*;
 
