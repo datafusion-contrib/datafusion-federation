@@ -137,6 +137,7 @@ mod test {
         array::{Int32Array, StringArray},
         datatypes::{DataType, Field, Schema, TimeUnit},
     };
+    use datafusion::assert_batches_eq;
 
     fn schema() -> SchemaRef {
         Arc::new(Schema::new(vec![
@@ -173,10 +174,20 @@ mod test {
     #[test]
     fn test_string_to_timestamp_conversion() {
         let result = try_cast_to(batch_input(), to_schema()).expect("converted");
-        assert_eq!(3, result.num_rows());
+        let expected = vec![
+            "+---+-----+---------------------+",
+            "| a | b   | c                   |",
+            "+---+-----+---------------------+",
+            "| 1 | foo | 2024-01-13T03:18:09 |",
+            "| 2 | bar | 2024-01-13T03:18:09 |",
+            "| 3 | baz | 2024-01-13T03:18:09 |",
+            "+---+-----+---------------------+",
+        ];
+
+        assert_batches_eq!(expected, &[result]);
     }
 
-    fn large_string_schema() -> SchemaRef {
+    fn large_string_from_schema() -> SchemaRef {
         Arc::new(Schema::new(vec![
             Field::new("a", DataType::Int32, false),
             Field::new("b", DataType::LargeUtf8, false),
@@ -194,7 +205,7 @@ mod test {
 
     fn large_string_batch_input() -> RecordBatch {
         RecordBatch::try_new(
-            large_string_schema(),
+            large_string_from_schema(),
             vec![
                 Arc::new(Int32Array::from(vec![1, 2, 3])),
                 Arc::new(LargeStringArray::from(vec!["foo", "bar", "baz"])),
@@ -212,6 +223,15 @@ mod test {
     fn test_large_string_to_timestamp_conversion() {
         let result =
             try_cast_to(large_string_batch_input(), large_string_to_schema()).expect("converted");
-        assert_eq!(3, result.num_rows());
+        let expected = vec![
+            "+---+-----+---------------------+",
+            "| a | b   | c                   |",
+            "+---+-----+---------------------+",
+            "| 1 | foo | 2024-01-13T03:18:09 |",
+            "| 2 | bar | 2024-01-13T03:18:09 |",
+            "| 3 | baz | 2024-01-13T03:18:09 |",
+            "+---+-----+---------------------+",
+        ];
+        assert_batches_eq!(expected, &[result]);
     }
 }
