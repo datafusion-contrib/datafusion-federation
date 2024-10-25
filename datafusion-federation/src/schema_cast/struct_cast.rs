@@ -1,6 +1,7 @@
 use arrow_json::ReaderBuilder;
+use datafusion::arrow::array::{GenericStringArray, OffsetSizeTrait};
 use datafusion::arrow::{
-    array::{Array, ArrayRef, StringArray},
+    array::{Array, ArrayRef},
     datatypes::Field,
     error::ArrowError,
 };
@@ -8,13 +9,13 @@ use std::sync::Arc;
 
 pub type Result<T, E = crate::schema_cast::record_convert::Error> = std::result::Result<T, E>;
 
-pub(crate) fn cast_string_to_struct(
+pub(crate) fn cast_string_to_struct<StringOffsetSize: OffsetSizeTrait>(
     array: &dyn Array,
     struct_field: Arc<Field>,
 ) -> Result<ArrayRef, ArrowError> {
     let string_array = array
         .as_any()
-        .downcast_ref::<StringArray>()
+        .downcast_ref::<GenericStringArray<StringOffsetSize>>()
         .ok_or_else(|| ArrowError::CastError("Failed to downcast to StringArray".to_string()))?;
 
     let mut decoder = ReaderBuilder::new_with_field(struct_field)
