@@ -27,6 +27,7 @@ pub fn default_session_state() -> SessionState {
     SessionStateBuilder::new()
         .with_optimizer_rules(rules)
         .with_query_planner(Arc::new(FederatedQueryPlanner::new()))
+        .with_default_features()
         .build()
 }
 
