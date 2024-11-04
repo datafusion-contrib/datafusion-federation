@@ -10,11 +10,14 @@ use datafusion::{
     sql::TableReference,
 };
 
-use crate::{optimize::optimize_plan, FederatedTableProviderAdaptor, FederatedTableSource, FederationProviderRef};
-
+use crate::{
+    optimize::Optimizer, FederatedTableProviderAdaptor, FederatedTableSource, FederationProviderRef,
+};
 
 #[derive(Default)]
-pub struct FederationAnalyzerRule {}
+pub struct FederationAnalyzerRule {
+    optimizer: Optimizer,
+}
 
 impl AnalyzerRule for FederationAnalyzerRule {
     // Walk over the plan, look for the largest subtrees that only have
@@ -26,7 +29,7 @@ impl AnalyzerRule for FederationAnalyzerRule {
             return Ok(plan);
         }
 
-        let plan = optimize_plan(plan)?;
+        let plan = self.optimizer.optimize_plan(plan)?;
 
         let (optimized, _) = self.optimize_recursively(&plan, None, config)?;
         if let Some(result) = optimized {
@@ -43,7 +46,7 @@ impl AnalyzerRule for FederationAnalyzerRule {
 
 fn contains_federated_table(plan: &LogicalPlan) -> Result<bool> {
     let federated_table_exists = plan.exists(|x| {
-        if let Some(provider) = get_federation_provider(x)?  {
+        if let Some(provider) = get_federation_provider(x)? {
             // federated table provider should have an analyzer
             return Ok(provider.analyzer().is_some());
         }

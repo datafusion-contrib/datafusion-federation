@@ -1,27 +1,61 @@
 use datafusion::{
-    common::tree_node::{Transformed, TreeNode, TreeNodeRewriter},
+    common::tree_node::{Transformed, TransformedResult, TreeNode, TreeNodeRewriter},
     error::Result,
-    logical_expr:: LogicalPlan,
+    execution::{SessionState, SessionStateBuilder},
+    logical_expr::LogicalPlan,
     optimizer::{
-        optimizer::ApplyOrder, push_down_filter, OptimizerConfig, OptimizerContext, OptimizerRule
-    }
+        optimize_projections::OptimizeProjections, optimizer::ApplyOrder,
+        push_down_filter::PushDownFilter, OptimizerConfig, OptimizerRule,
+    },
+    prelude::SessionConfig,
 };
 
-pub(crate) fn optimize_plan(plan: LogicalPlan) -> Result<LogicalPlan> {
-    let push_down_filter_rule = push_down_filter::PushDownFilter::new();
-    // `push_down_filter` does not use config so it can be default
-    let optimizer_config = OptimizerContext::default();
+pub(crate) struct Optimizer {
+    config: SessionState,
+    push_down_filter: PushDownFilter,
+    optimize_projections: OptimizeProjections,
+}
 
-    let res = match push_down_filter_rule.apply_order() {
-        Some(apply_order) => plan.rewrite(&mut Rewriter::new(
-            apply_order,
-            &push_down_filter_rule,
-            &optimizer_config,
-        )),
-        None => optimize_plan_node(plan, &push_down_filter_rule, &optimizer_config),
-    };
+impl Default for Optimizer {
+    fn default() -> Self {
+        // `push_down_filter` and `optimize_projections` does not use config (except `optimize_projections_preserve_existing_projections`) so it can be default
+        // `SessionState` implements `OptimizerConfig` allowing specification of the required configuration for optimization rules.
+        let config = SessionStateBuilder::new()
+            .with_config(
+                SessionConfig::new().with_optimize_projections_preserve_existing_projections(true),
+            )
+            .build();
 
-    Ok(res?.data)
+        Self {
+            config,
+            push_down_filter: PushDownFilter::new(),
+            optimize_projections: OptimizeProjections::new(),
+        }
+    }
+}
+
+impl Optimizer {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn optimize_plan(&self, plan: LogicalPlan) -> Result<LogicalPlan> {
+        let mut optimized_plan = plan
+            .rewrite(&mut Rewriter::new(
+                ApplyOrder::TopDown,
+                &self.push_down_filter,
+                &self.config,
+            ))?
+            .data;
+
+        // `optimize_projections` is applied recursively top down so it can be applied only once to the root node
+        optimized_plan = self
+            .optimize_projections
+            .rewrite(optimized_plan, &self.config)
+            .data()?;
+
+        Ok(optimized_plan)
+    }
 }
 
 struct Rewriter<'a> {
@@ -65,13 +99,18 @@ impl<'a> TreeNodeRewriter for Rewriter<'a> {
 }
 
 fn should_run_rule_for_node(node: &LogicalPlan, _rule: &dyn OptimizerRule) -> bool {
-    // this logic is applicable only for `push_down_filter_rule`; we don't have any other rules
+    // this logic is applicable only for `push_down_filter_rule`; we don't have any other rules using `should_run_rule_for_node`
     if let LogicalPlan::Filter(x) = node {
         // Applying the `push_down_filter_rule` to certain nodes like `SubqueryAlias`, `Aggregate`, and `CrossJoin`
         // can cause issues during unparsing, thus the optimization is only applied to nodes that are currently supported.
         matches!(
             x.input.as_ref(),
-            LogicalPlan::Join(_) | LogicalPlan::TableScan(_) | LogicalPlan::Projection(_) | LogicalPlan::Filter(_) | LogicalPlan::Distinct(_) | LogicalPlan::Sort(_)
+            LogicalPlan::Join(_)
+                | LogicalPlan::TableScan(_)
+                | LogicalPlan::Projection(_)
+                | LogicalPlan::Filter(_)
+                | LogicalPlan::Distinct(_)
+                | LogicalPlan::Sort(_)
         )
     } else {
         true
