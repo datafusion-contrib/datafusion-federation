@@ -40,6 +40,7 @@ use crate::{
 // extern crate derive_builder;
 
 // SQLFederationProvider provides federation to SQL DMBSs.
+#[derive(Debug)]
 pub struct SQLFederationProvider {
     optimizer: Arc<Optimizer>,
     executor: Arc<dyn SQLExecutor>,
@@ -70,6 +71,7 @@ impl FederationProvider for SQLFederationProvider {
     }
 }
 
+#[derive(Debug)]
 struct SQLFederationOptimizerRule {
     planner: Arc<dyn FederationPlanner>,
 }
@@ -926,8 +928,8 @@ mod tests {
             ),
             // different tables in single aggregation expression
             (
-                "SELECT COUNT(CASE WHEN app_table.a > 0 THEN app_table.a ELSE foo.df_table.a END) FROM app_table, foo.df_table",
-                r#"SELECT count(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE remote_table.a END) FROM remote_table JOIN remote_table ON true"#,
+                "SELECT COUNT(CASE WHEN appt.a > 0 THEN appt.a ELSE dft.a END) FROM app_table as appt, foo.df_table as dft",
+                "SELECT count(CASE WHEN (appt.a > 0) THEN appt.a ELSE dft.a END) FROM remote_table AS appt JOIN remote_table AS dft"
             ),
         ];
 

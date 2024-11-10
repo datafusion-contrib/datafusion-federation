@@ -22,7 +22,7 @@ use scan_result::ScanResult;
 /// The optimizer logic walks over the plan, look for the largest subtrees that only have
 /// TableScans from the same [`FederationProvider`]. There 'largest sub-trees' are passed to their
 /// respective [`FederationProvider::optimizer`].
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct FederationOptimizerRule {}
 
 impl OptimizerRule for FederationOptimizerRule {

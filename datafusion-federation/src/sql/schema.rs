@@ -12,6 +12,7 @@ use crate::{
     FederationProvider,
 };
 
+#[derive(Debug)]
 pub struct SQLSchemaProvider {
     // provider: Arc<SQLFederationProvider>,
     tables: Vec<Arc<SQLTableSource>>,
@@ -73,6 +74,7 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 }
 
+#[derive(Debug)]
 pub struct MultiSchemaProvider {
     children: Vec<Arc<dyn SchemaProvider>>,
 }
@@ -107,6 +109,7 @@ impl SchemaProvider for MultiSchemaProvider {
     }
 }
 
+#[derive(Debug)]
 pub struct SQLTableSource {
     provider: Arc<SQLFederationProvider>,
     table_name: String,
