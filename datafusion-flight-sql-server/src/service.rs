@@ -75,9 +75,9 @@ impl FlightSqlService {
     /// Replaces the sql_options with the provided options.
     /// These options are used to verify all SQL queries.
     /// When None the default [`SQLOptions`] are used.
-    pub fn with_sql_options(self, sql_options: Option<SQLOptions>) -> Self {
+    pub fn with_sql_options(self, sql_options: SQLOptions) -> Self {
         Self {
-            sql_options,
+            sql_options: Some(sql_options),
             ..self
         }
     }

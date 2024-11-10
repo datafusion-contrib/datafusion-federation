@@ -72,8 +72,7 @@ impl UserDefinedLogicalNodeCore for FederatedPlanNode {
     }
 }
 
-#[derive(Default)]
-
+#[derive(Default, Debug)]
 pub struct FederatedQueryPlanner {}
 
 impl FederatedQueryPlanner {
@@ -110,10 +109,22 @@ pub trait FederationPlanner: Send + Sync {
     ) -> Result<Arc<dyn ExecutionPlan>>;
 }
 
+impl std::fmt::Debug for dyn FederationPlanner {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "FederationPlanner")
+    }
+}
+
 impl PartialEq<FederatedPlanNode> for FederatedPlanNode {
     /// Comparing name, args and return_type
     fn eq(&self, other: &FederatedPlanNode) -> bool {
         self.plan == other.plan
+    }
+}
+
+impl PartialOrd<FederatedPlanNode> for FederatedPlanNode {
+    fn partial_cmp(&self, other: &FederatedPlanNode) -> Option<std::cmp::Ordering> {
+        self.plan.partial_cmp(&other.plan)
     }
 }
 
