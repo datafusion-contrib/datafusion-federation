@@ -13,6 +13,7 @@ use datafusion_federation::{
 
 use crate::SQLFederationProvider;
 
+#[derive(Debug)]
 pub struct SQLSchemaProvider {
     // provider: Arc<SQLFederationProvider>,
     tables: Vec<Arc<SQLTableSource>>,
@@ -74,6 +75,7 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 }
 
+#[derive(Debug)]
 pub struct MultiSchemaProvider {
     children: Vec<Arc<dyn SchemaProvider>>,
 }
@@ -112,6 +114,15 @@ pub struct SQLTableSource {
     provider: Arc<SQLFederationProvider>,
     table_name: String,
     schema: SchemaRef,
+}
+
+impl std::fmt::Debug for SQLTableSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SQLTableSource")
+            .field("table_name", &self.table_name)
+            .field("schema", &self.schema)
+            .finish()
+    }
 }
 
 impl SQLTableSource {

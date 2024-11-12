@@ -7,7 +7,9 @@ use datafusion::{
     common::Constraints,
     datasource::TableProvider,
     error::{DataFusionError, Result},
-    logical_expr::{Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType},
+    logical_expr::{
+        dml::InsertOp, Expr, LogicalPlan, TableProviderFilterPushDown, TableSource, TableType,
+    },
     physical_plan::ExecutionPlan,
 };
 
@@ -18,6 +20,14 @@ use crate::FederationProvider;
 pub struct FederatedTableProviderAdaptor {
     pub source: Arc<dyn FederatedTableSource>,
     pub table_provider: Option<Arc<dyn TableProvider>>,
+}
+
+impl std::fmt::Debug for FederatedTableProviderAdaptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FederatedTableProviderAdaptor")
+            .field("table_provider", &self.table_provider)
+            .finish()
+    }
 }
 
 impl FederatedTableProviderAdaptor {
@@ -124,7 +134,7 @@ impl TableProvider for FederatedTableProviderAdaptor {
         &self,
         _state: &dyn Session,
         input: Arc<dyn ExecutionPlan>,
-        overwrite: bool,
+        overwrite: InsertOp,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         if let Some(table_provider) = &self.table_provider {
             return table_provider.insert_into(_state, input, overwrite).await;

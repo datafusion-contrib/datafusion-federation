@@ -14,7 +14,7 @@ use crate::{
     optimize::Optimizer, FederatedTableProviderAdaptor, FederatedTableSource, FederationProviderRef,
 };
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct FederationAnalyzerRule {
     optimizer: Optimizer,
 }
@@ -24,7 +24,6 @@ impl AnalyzerRule for FederationAnalyzerRule {
     // TableScans from the same FederationProvider.
     // There 'largest sub-trees' are passed to their respective FederationProvider.optimizer.
     fn analyze(&self, plan: LogicalPlan, config: &ConfigOptions) -> Result<LogicalPlan> {
-    
         if !contains_federated_table(&plan)? {
             return Ok(plan);
         }

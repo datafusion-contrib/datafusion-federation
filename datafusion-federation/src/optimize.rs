@@ -10,6 +10,7 @@ use datafusion::{
     prelude::SessionConfig,
 };
 
+#[derive(Debug)]
 pub(crate) struct Optimizer {
     config: SessionState,
     push_down_filter: PushDownFilter,

@@ -78,6 +78,12 @@ struct SQLFederationAnalyzerRule {
     planner: Arc<dyn FederationPlanner>,
 }
 
+impl std::fmt::Debug for SQLFederationAnalyzerRule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SQLFederationAnalyzerRule").finish()
+    }
+}
+
 impl SQLFederationAnalyzerRule {
     pub fn new(executor: Arc<dyn SQLExecutor>) -> Self {
         Self {

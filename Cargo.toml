@@ -12,7 +12,7 @@ members = [
 # connectorx = { path = "../connector-x/connectorx" }
 # datafusion = { path = "../arrow-datafusion/datafusion/core" }
 # Pending next Datafusion release with `unnest` unparsing support
-datafusion = { git = "https://github.com/spiceai/datafusion.git", rev = "06969ee5af853f0c071a98683dc2b9fde71b81a9" }
+datafusion = { git = "https://github.com/spiceai/datafusion.git", rev = "0bad328656a07fd5ab899186462b09e119e21f90" }
 
 [workspace.package]
 version = "0.1.6"
@@ -25,6 +25,6 @@ readme = "README.md"
 async-trait = "0.1.77"
 async-stream = "0.3.5"
 futures = "0.3.30"
-datafusion = "42"
-datafusion-substrait = "42"
+datafusion = "43"
+datafusion-substrait = "43"
 arrow-json = "53"
