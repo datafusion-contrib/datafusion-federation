@@ -1,31 +1,26 @@
 use datafusion::{
     common::tree_node::{Transformed, TransformedResult, TreeNode, TreeNodeRewriter},
     error::Result,
-    execution::{SessionState, SessionStateBuilder},
     logical_expr::LogicalPlan,
     optimizer::{
-        optimize_projections::OptimizeProjections, optimizer::ApplyOrder,
-        push_down_filter::PushDownFilter, OptimizerConfig, OptimizerRule,
+        optimizer::ApplyOrder, push_down_filter::PushDownFilter, OptimizerConfig, OptimizerContext, OptimizerRule
     },
-    prelude::SessionConfig,
 };
+use optimize_projections::OptimizeProjections;
+
+mod optimize_projections;
 
 #[derive(Debug)]
 pub(crate) struct Optimizer {
-    config: SessionState,
+    config: OptimizerContext,
     push_down_filter: PushDownFilter,
     optimize_projections: OptimizeProjections,
 }
 
 impl Default for Optimizer {
     fn default() -> Self {
-        // `push_down_filter` and `optimize_projections` does not use config (except `optimize_projections_preserve_existing_projections`) so it can be default
-        // `SessionState` implements `OptimizerConfig` allowing specification of the required configuration for optimization rules.
-        let config = SessionStateBuilder::new()
-            .with_config(
-                SessionConfig::new().with_optimize_projections_preserve_existing_projections(true),
-            )
-            .build();
+        // `push_down_filter` and `optimize_projections` does not use config so it can be default
+        let config = OptimizerContext::default();
 
         Self {
             config,
@@ -36,10 +31,6 @@ impl Default for Optimizer {
 }
 
 impl Optimizer {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn optimize_plan(&self, plan: LogicalPlan) -> Result<LogicalPlan> {
         let mut optimized_plan = plan
             .rewrite(&mut Rewriter::new(
