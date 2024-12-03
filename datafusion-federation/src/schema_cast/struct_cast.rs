@@ -51,7 +51,7 @@ pub(crate) fn cast_string_to_struct<StringOffsetSize: OffsetSizeTrait>(
         }
     };
     // struct_field is single struct column
-    return Ok(Arc::clone(record.column(0)));
+    Ok(Arc::clone(record.column(0)))
 }
 
 #[cfg(test)]
