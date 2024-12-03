@@ -22,6 +22,8 @@ jobs:
           fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies 
+        run: apt install -y protobuf-compiler libprotobuf-dev
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
         with:
