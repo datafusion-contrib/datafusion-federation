@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Datafusion flight sql server."
+readme = "README.md"
 
 [lib]
 name = "datafusion_flight_sql_server"
