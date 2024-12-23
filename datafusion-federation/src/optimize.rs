@@ -3,7 +3,8 @@ use datafusion::{
     error::Result,
     logical_expr::LogicalPlan,
     optimizer::{
-        optimizer::ApplyOrder, push_down_filter::PushDownFilter, OptimizerConfig, OptimizerContext, OptimizerRule
+        optimizer::ApplyOrder, push_down_filter::PushDownFilter, OptimizerConfig, OptimizerContext,
+        OptimizerRule,
     },
 };
 use optimize_projections::OptimizeProjections;
