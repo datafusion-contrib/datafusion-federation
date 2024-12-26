@@ -50,7 +50,7 @@ pub(crate) fn cast_string_to_struct(
         }
     };
     // struct_field is single struct column
-    return Ok(Arc::clone(record.column(0)));
+    Ok(Arc::clone(record.column(0)))
 }
 
 #[cfg(test)]

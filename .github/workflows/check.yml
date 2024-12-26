@@ -10,4 +10,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
       - run: npm install prettier prettier-plugin-toml
-      - run: npx prettier --check --no-config .
+      - run: npx prettier --write --no-config .

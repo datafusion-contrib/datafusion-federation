@@ -16,12 +16,15 @@
 // under the License.
 
 /// Copy of DataFusion's [`RequiredIndicies`](https://github.com/apache/datafusion/blob/main/datafusion/optimizer/src/optimize_projections/required_indices.rs) implementation.
-
 use std::result;
 
-use datafusion::{common::{tree_node::TreeNodeRecursion, Column, DFSchemaRef}, error::DataFusionError, logical_expr::LogicalPlan, prelude::Expr};
-
 use super::outer_columns;
+use datafusion::{
+    common::{tree_node::TreeNodeRecursion, Column, DFSchemaRef},
+    error::DataFusionError,
+    logical_expr::LogicalPlan,
+    prelude::Expr,
+};
 
 type Result<T, E = DataFusionError> = result::Result<T, E>;
 
@@ -91,11 +94,7 @@ impl RequiredIndicies {
     }
 
     /// Add required indices for all `exprs` used in plan
-    pub fn with_plan_exprs(
-        mut self,
-        plan: &LogicalPlan,
-        schema: &DFSchemaRef,
-    ) -> Result<Self> {
+    pub fn with_plan_exprs(mut self, plan: &LogicalPlan, schema: &DFSchemaRef) -> Result<Self> {
         // Add indices of the child fields referred to by the expressions in the
         // parent
         plan.apply_expressions(|e| {
@@ -168,8 +167,7 @@ impl RequiredIndicies {
     where
         F: Fn(usize) -> bool,
     {
-        let (l, r): (Vec<usize>, Vec<usize>) =
-            self.indices.iter().partition(|&&idx| f(idx));
+        let (l, r): (Vec<usize>, Vec<usize>) = self.indices.iter().partition(|&&idx| f(idx));
         let projection_beneficial = self.projection_beneficial;
 
         (

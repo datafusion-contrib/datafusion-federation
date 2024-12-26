@@ -35,8 +35,6 @@ use datafusion_federation::{
 mod schema;
 pub use schema::*;
 
-#[cfg(feature = "connectorx")]
-pub mod connectorx;
 mod executor;
 pub use executor::*;
 
@@ -301,9 +299,7 @@ fn rewrite_column_name_in_expr(
     }
 
     // Find the first occurrence of table_ref_str starting from start_pos
-    let Some(idx) = col_name[start_pos..].find(table_ref_str) else {
-        return None;
-    };
+    let idx = col_name[start_pos..].find(table_ref_str)?;
 
     // Calculate the absolute index of the occurrence in string as the index above is relative to start_pos
     let idx = start_pos + idx;
@@ -1010,8 +1006,8 @@ mod tests {
             ),
             // different tables in single aggregation expression
             (
-                "SELECT COUNT(CASE WHEN app_table.a > 0 THEN app_table.a ELSE foo.df_table.a END) FROM app_table, foo.df_table",
-                r#"SELECT count(CASE WHEN (remote_table.a > 0) THEN remote_table.a ELSE remote_table.a END) FROM remote_table JOIN remote_table ON true"#,
+                "SELECT COUNT(CASE WHEN appt.a > 0 THEN appt.a ELSE dft.a END) FROM app_table as appt, foo.df_table as dft",
+                "SELECT count(CASE WHEN (appt.a > 0) THEN appt.a ELSE dft.a END) FROM remote_table AS appt JOIN remote_table AS dft"
             ),
         ];
 
@@ -1083,12 +1079,12 @@ mod tests {
     ) -> Result<(), datafusion::error::DataFusionError> {
         let data_frame = ctx.sql(sql_query).await?;
 
-        println!("before optimization: \n{:#?}", data_frame.logical_plan());
+        // println!("before optimization: \n{:#?}", data_frame.logical_plan());
 
         let mut known_rewrites = HashMap::new();
         let rewritten_plan = rewrite_table_scans(data_frame.logical_plan(), &mut known_rewrites)?;
 
-        println!("rewritten_plan: \n{:#?}", rewritten_plan);
+        // println!("rewritten_plan: \n{:#?}", rewritten_plan);
 
         let unparsed_sql = plan_to_sql(&rewritten_plan)?;
 

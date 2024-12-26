@@ -1,8 +1,9 @@
 use std::{sync::Arc, time::Duration};
 
 use arrow_flight::sql::client::FlightSqlServiceClient;
+use datafusion::execution::SessionStateBuilder;
 use datafusion::{
-    catalog::schema::SchemaProvider,
+    catalog::SchemaProvider,
     error::{DataFusionError, Result},
     execution::{
         context::{SessionContext, SessionState},
@@ -39,14 +40,14 @@ async fn main() -> Result<()> {
     sleep(Duration::from_secs(3)).await;
 
     // Local context
-    let state = SessionContext::new().state();
     let known_tables: Vec<String> = ["test"].iter().map(|&x| x.into()).collect();
 
     // Register FederationAnalyzer
     // TODO: Interaction with other analyzers & optimizers.
-    let state = state
-        .add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()))
-        .with_query_planner(Arc::new(FederatedQueryPlanner::new()));
+    let mut state = SessionStateBuilder::new()
+        .with_query_planner(Arc::new(FederatedQueryPlanner::new()))
+        .build();
+    state.add_analyzer_rule(Arc::new(FederationAnalyzerRule::new()));
 
     // Register schema
     // TODO: table inference

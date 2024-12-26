@@ -71,7 +71,7 @@ impl<'a> Rewriter<'a> {
     }
 }
 
-impl<'a> TreeNodeRewriter for Rewriter<'a> {
+impl TreeNodeRewriter for Rewriter<'_> {
     type Node = LogicalPlan;
 
     fn f_down(&mut self, node: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
