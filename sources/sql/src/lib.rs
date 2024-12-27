@@ -304,6 +304,12 @@ fn rewrite_column_name_in_expr(
     // Calculate the absolute index of the occurrence in string as the index above is relative to start_pos
     let idx = start_pos + idx;
 
+    // Table name same as column name
+    // Shouldn't rewrite in this case
+    if idx == 0 && start_pos == 0 {
+        return None;
+    }
+
     if idx > 0 {
         // Check if the previous character is alphabetic, numeric, underscore or period, in which case we
         // should not rewrite as it is a part of another name.
@@ -1064,6 +1070,23 @@ mod tests {
                 r#"SELECT sum(b.x) AS total FROM (SELECT UNNEST(remote_table.d) AS x FROM remote_table WHERE (remote_table.a > 0)) AS b"#,
             ),
         ];
+
+        for test in tests {
+            test_sql(&ctx, test.0, test.1).await?;
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_rewrite_same_column_table_name() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_df_context();
+
+        let tests = vec![(
+            "SELECT app_table FROM (SELECT a app_table from app_table limit 100);",
+            r#"SELECT app_table FROM (SELECT remote_table.a AS app_table FROM remote_table LIMIT 100)"#,
+        )];
 
         for test in tests {
             test_sql(&ctx, test.0, test.1).await?;
