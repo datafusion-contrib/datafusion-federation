@@ -35,6 +35,11 @@ pub trait SQLExecutor: Sync + Send {
     async fn table_names(&self) -> Result<Vec<String>>;
     /// Returns the schema of table_name within this SQLExecutor
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef>;
+
+    /// Returns whether the executor requires partial table path in subquery
+    fn subquery_use_partial_path(&self) -> bool {
+        false
+    }
 }
 
 impl fmt::Debug for dyn SQLExecutor {
