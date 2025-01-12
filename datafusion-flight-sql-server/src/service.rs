@@ -1002,7 +1002,7 @@ async fn parse_substrait_bytes(
         .await
         .map_err(df_error_to_status)?;
 
-    from_substrait_plan(&ctx.inner, &substrait_plan)
+    from_substrait_plan(&ctx.inner.state(), &substrait_plan)
         .await
         .map_err(df_error_to_status)
 }

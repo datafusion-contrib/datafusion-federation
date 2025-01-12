@@ -20,7 +20,8 @@ use datafusion::{
     optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
-        DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
+        execution_plan::{Boundedness, EmissionType},
+        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
         SendableRecordBatchStream,
     },
     sql::{
@@ -579,15 +580,18 @@ fn rewrite_table_scans_in_expr(
                         })
                     })
                     .transpose()?,
-                ..options
+                ..*options
             };
             if let Some(rewrite) = qualifier.as_ref().and_then(|q| known_rewrites.get(q)) {
                 Ok(Expr::Wildcard {
                     qualifier: Some(rewrite.clone()),
-                    options,
+                    options: Box::new(options),
                 })
             } else {
-                Ok(Expr::Wildcard { qualifier, options })
+                Ok(Expr::Wildcard {
+                    qualifier,
+                    options: Box::new(options),
+                })
             }
         }
         Expr::GroupingSet(gs) => match gs {
@@ -676,7 +680,8 @@ impl VirtualExecutionPlan {
         let props = PlanProperties::new(
             EquivalenceProperties::new(Arc::new(schema)),
             Partitioning::UnknownPartitioning(1),
-            ExecutionMode::Bounded,
+            EmissionType::Incremental,
+            Boundedness::Bounded,
         );
         Self {
             plan,
@@ -952,7 +957,7 @@ mod tests {
             // different tables in single aggregation expression
             (
                 "SELECT COUNT(CASE WHEN appt.a > 0 THEN appt.a ELSE dft.a END) FROM app_table as appt, foo.df_table as dft",
-                "SELECT count(CASE WHEN (appt.a > 0) THEN appt.a ELSE dft.a END) FROM remote_table AS appt JOIN remote_table AS dft"
+                "SELECT count(CASE WHEN (appt.a > 0) THEN appt.a ELSE dft.a END) FROM remote_table AS appt CROSS JOIN remote_table AS dft"
             ),
         ];
 
