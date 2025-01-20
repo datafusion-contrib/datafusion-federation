@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5](https://github.com/datafusion-contrib/datafusion-federation/compare/datafusion-federation-v0.3.4...datafusion-federation-v0.3.5) - 2025-01-20
+
+### Other
+
+- Use the Dialect and Unparser constructor when using the plan_to_sql function. (#105)
+
 ## [0.3.4](https://github.com/datafusion-contrib/datafusion-federation/compare/datafusion-federation-v0.3.3...datafusion-federation-v0.3.4) - 2025-01-12
 
 ### Other
