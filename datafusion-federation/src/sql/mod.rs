@@ -25,6 +25,7 @@ use datafusion::{
         SendableRecordBatchStream,
     },
     sql::{
+        sqlparser::ast::Statement,
         unparser::{plan_to_sql, Unparser},
         TableReference,
     },
@@ -698,14 +699,18 @@ impl VirtualExecutionPlan {
     fn sql(&self) -> Result<String> {
         // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
         let mut known_rewrites = HashMap::new();
-        let mut ast = Unparser::new(self.executor.dialect().as_ref())
-            .plan_to_sql(&rewrite_table_scans(&self.plan, &mut known_rewrites)?)?;
+        let plan = &rewrite_table_scans(&self.plan, &mut known_rewrites)?;
+        let mut ast = self.plan_to_sql(plan)?;
 
         if let Some(analyzer) = self.executor.ast_analyzer() {
             ast = analyzer(ast)?;
         }
 
         Ok(format!("{ast}"))
+    }
+
+    fn plan_to_sql(&self, plan: &LogicalPlan) -> Result<Statement> {
+        Unparser::new(self.executor.dialect().as_ref()).plan_to_sql(plan)
     }
 }
 
@@ -758,9 +763,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        let ast = plan_to_sql(&self.plan)?;
-        let query = format!("{ast}");
-
+        let query = self.plan_to_sql(&self.plan)?.to_string();
         self.executor.execute(query.as_str(), self.schema())
     }
 
