@@ -15,7 +15,7 @@ readme = "README.md"
 repository = "https://github.com/datafusion-contrib/datafusion-federation"
 
 [workspace.dependencies]
-arrow = "53.3"
+arrow = "54.0"
 arrow-flight = { version = "53.3", features = ["flight-sql-experimental"] }
 arrow-json = "53.3"
 async-stream = "0.3.5"
