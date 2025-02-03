@@ -1,7 +1,1 @@
-[[package]]
-name = "datafusion-flight-sql-table-provider"
-changelog_update = false
-git_release_enable = false
-publish = false
-release = false
-semver_check = false
+
