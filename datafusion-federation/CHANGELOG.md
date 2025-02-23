@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.3.5...v0.3.6) - 2025-02-19
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.3.5](https://github.com/datafusion-contrib/datafusion-federation/compare/datafusion-federation-v0.3.4...datafusion-federation-v0.3.5) - 2025-01-20
 
 ### Other
