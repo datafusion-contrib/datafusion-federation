@@ -579,6 +579,8 @@ fn rewrite_table_scans_in_expr(
                 is.negated,
             )))
         }
+        // TODO: remove the next line after `Expr::Wildcard` is removed in datafusion
+        #[expect(deprecated)]
         Expr::Wildcard { qualifier, options } => {
             let options = WildcardOptions {
                 replace: options
