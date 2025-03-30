@@ -777,8 +777,7 @@ mod tests {
     use crate::FederatedTableProviderAdaptor;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
-        catalog::SchemaProvider,
-        catalog_common::MemorySchemaProvider,
+        catalog::{MemorySchemaProvider, SchemaProvider},
         common::Column,
         datasource::{DefaultTableSource, TableProvider},
         error::DataFusionError,
