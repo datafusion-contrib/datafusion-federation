@@ -11,8 +11,9 @@ use datafusion::{
     execution::{context::SessionState, TaskContext},
     logical_expr::{
         expr::{
-            AggregateFunction, Alias, Exists, InList, InSubquery, PlannedReplaceSelectItem,
-            ScalarFunction, Sort, Unnest, WildcardOptions, WindowFunction,
+            AggregateFunction, AggregateFunctionParams, Alias, Exists, InList, InSubquery,
+            PlannedReplaceSelectItem, ScalarFunction, Sort, Unnest, WildcardOptions,
+            WindowFunction, WindowFunctionParams,
         },
         Between, BinaryExpr, Case, Cast, Expr, Extension, GroupingSet, Like, Limit, LogicalPlan,
         Subquery, TryCast,
@@ -463,16 +464,19 @@ fn rewrite_table_scans_in_expr(
         }
         Expr::AggregateFunction(af) => {
             let args = af
+                .params
                 .args
                 .into_iter()
                 .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                 .collect::<Result<Vec<Expr>>>()?;
             let filter = af
+                .params
                 .filter
                 .map(|e| rewrite_table_scans_in_expr(*e, known_rewrites))
                 .transpose()?
                 .map(Box::new);
             let order_by = af
+                .params
                 .order_by
                 .map(|e| {
                     e.into_iter()
@@ -485,27 +489,33 @@ fn rewrite_table_scans_in_expr(
                         .collect::<Result<Vec<_>>>()
                 })
                 .transpose()?;
-            Ok(Expr::AggregateFunction(AggregateFunction {
-                func: af.func,
+            let params = AggregateFunctionParams {
                 args,
-                distinct: af.distinct,
+                distinct: af.params.distinct,
                 filter,
                 order_by,
-                null_treatment: af.null_treatment,
+                null_treatment: af.params.null_treatment,
+            };
+            Ok(Expr::AggregateFunction(AggregateFunction {
+                func: af.func,
+                params,
             }))
         }
         Expr::WindowFunction(wf) => {
             let args = wf
+                .params
                 .args
                 .into_iter()
                 .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                 .collect::<Result<Vec<Expr>>>()?;
             let partition_by = wf
+                .params
                 .partition_by
                 .into_iter()
                 .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
                 .collect::<Result<Vec<Expr>>>()?;
             let order_by = wf
+                .params
                 .order_by
                 .into_iter()
                 .map(|sort| {
@@ -515,13 +525,16 @@ fn rewrite_table_scans_in_expr(
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(Expr::WindowFunction(WindowFunction {
-                fun: wf.fun,
+            let params = WindowFunctionParams {
                 args,
                 partition_by,
                 order_by,
-                window_frame: wf.window_frame,
-                null_treatment: wf.null_treatment,
+                window_frame: wf.params.window_frame,
+                null_treatment: wf.params.null_treatment,
+            };
+            Ok(Expr::WindowFunction(WindowFunction {
+                fun: wf.fun,
+                params,
             }))
         }
         Expr::InList(il) => {
@@ -566,6 +579,8 @@ fn rewrite_table_scans_in_expr(
                 is.negated,
             )))
         }
+        // TODO: remove the next line after `Expr::Wildcard` is removed in datafusion
+        #[expect(deprecated)]
         Expr::Wildcard { qualifier, options } => {
             let options = WildcardOptions {
                 replace: options
@@ -777,8 +792,7 @@ mod tests {
     use crate::FederatedTableProviderAdaptor;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
-        catalog::SchemaProvider,
-        catalog_common::MemorySchemaProvider,
+        catalog::{MemorySchemaProvider, SchemaProvider},
         common::Column,
         datasource::{DefaultTableSource, TableProvider},
         error::DataFusionError,
