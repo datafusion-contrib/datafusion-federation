@@ -1,45 +1,86 @@
 use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
-use datafusion::logical_expr::{TableSource, TableType};
 use datafusion::{
-    arrow::datatypes::SchemaRef, catalog::SchemaProvider, datasource::TableProvider, error::Result,
+    catalog::SchemaProvider,
+    datasource::TableProvider,
+    error::{DataFusionError, Result},
+    sql::TableReference,
 };
 use futures::future::join_all;
 
-use crate::{
-    sql::SQLFederationProvider, FederatedTableProviderAdaptor, FederatedTableSource,
-    FederationProvider,
-};
+use super::{table::SQLTable, RemoteTableRef, SQLTableSource};
+use crate::{sql::SQLFederationProvider, FederatedTableProviderAdaptor};
 
+/// An in-memory schema provider for SQL tables.
 #[derive(Debug)]
 pub struct SQLSchemaProvider {
-    // provider: Arc<SQLFederationProvider>,
     tables: Vec<Arc<SQLTableSource>>,
 }
 
 impl SQLSchemaProvider {
+    /// Creates a new SQLSchemaProvider from a [`SQLFederationProvider`].
+    /// Initializes the schema provider by fetching table names and schema from the federation provider's executor,
     pub async fn new(provider: Arc<SQLFederationProvider>) -> Result<Self> {
-        let tables = Arc::clone(&provider).executor.table_names().await?;
+        let executor = Arc::clone(&provider.executor);
+        let tables = executor
+            .table_names()
+            .await?
+            .iter()
+            .map(RemoteTableRef::try_from)
+            .collect::<Result<Vec<_>>>()?;
 
-        Self::new_with_tables(provider, tables).await
+        let tasks = tables
+            .into_iter()
+            .map(|table_ref| {
+                let provider = Arc::clone(&provider);
+                async move { SQLTableSource::new(provider, table_ref).await }
+            })
+            .collect::<Vec<_>>();
+
+        let tables = join_all(tasks)
+            .await
+            .into_iter()
+            .map(|res| res.map(Arc::new))
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(Self { tables })
     }
 
-    pub async fn new_with_tables(
+    /// Creates a new SQLSchemaProvider from a SQLFederationProvider and a list of table references.
+    /// Fetches the schema for each table using the executor's implementation.
+    pub async fn new_with_tables<T>(
         provider: Arc<SQLFederationProvider>,
-        tables: Vec<String>,
-    ) -> Result<Self> {
+        tables: Vec<T>,
+    ) -> Result<Self>
+    where
+        T: TryInto<RemoteTableRef, Error = DataFusionError>,
+    {
+        let tables = tables
+            .into_iter()
+            .map(|t| t.try_into())
+            .collect::<Result<Vec<RemoteTableRef>>>()?;
         let futures: Vec<_> = tables
             .into_iter()
             .map(|t| SQLTableSource::new(Arc::clone(&provider), t))
             .collect();
         let results: Result<Vec<_>> = join_all(futures).await.into_iter().collect();
-        let sources = results?.into_iter().map(Arc::new).collect();
-        Ok(Self::new_with_table_sources(sources))
+        let tables = results?.into_iter().map(Arc::new).collect();
+        Ok(Self { tables })
     }
 
-    pub fn new_with_table_sources(tables: Vec<Arc<SQLTableSource>>) -> Self {
-        Self { tables }
+    /// Creates a new SQLSchemaProvider from a SQLFederationProvider and a list of custom table instances.
+    pub fn new_with_custom_tables(
+        provider: Arc<SQLFederationProvider>,
+        tables: Vec<Arc<dyn SQLTable>>,
+    ) -> Self {
+        Self {
+            tables: tables
+                .into_iter()
+                .map(|table| SQLTableSource::new_with_table(provider.clone(), table))
+                .map(Arc::new)
+                .collect(),
+        }
     }
 }
 
@@ -50,27 +91,30 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 
     fn table_names(&self) -> Vec<String> {
-        self.tables.iter().map(|s| s.table_name.clone()).collect()
+        self.tables
+            .iter()
+            .map(|source| source.table_reference().to_quoted_string())
+            .collect()
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
-        if let Some(source) = self
-            .tables
-            .iter()
-            .find(|s| s.table_name.eq_ignore_ascii_case(name))
-        {
-            let adaptor = FederatedTableProviderAdaptor::new(
-                Arc::clone(source) as Arc<dyn FederatedTableSource>
-            );
+        if let Some(source) = self.tables.iter().find(|s| {
+            s.table_reference()
+                .to_quoted_string()
+                .eq_ignore_ascii_case(name)
+        }) {
+            let adaptor = FederatedTableProviderAdaptor::new(source.clone());
             return Ok(Some(Arc::new(adaptor)));
         }
         Ok(None)
     }
 
     fn table_exist(&self, name: &str) -> bool {
-        self.tables
-            .iter()
-            .any(|s| s.table_name.eq_ignore_ascii_case(name))
+        self.tables.iter().any(|source| {
+            source
+                .table_reference()
+                .resolved_eq(&TableReference::from(name))
+        })
     }
 }
 
@@ -106,57 +150,5 @@ impl SchemaProvider for MultiSchemaProvider {
 
     fn table_exist(&self, name: &str) -> bool {
         self.children.iter().any(|p| p.table_exist(name))
-    }
-}
-
-#[derive(Debug)]
-pub struct SQLTableSource {
-    provider: Arc<SQLFederationProvider>,
-    table_name: String,
-    schema: SchemaRef,
-}
-
-impl SQLTableSource {
-    // creates a SQLTableSource and infers the table schema
-    pub async fn new(provider: Arc<SQLFederationProvider>, table_name: String) -> Result<Self> {
-        let schema = Arc::clone(&provider)
-            .executor
-            .get_table_schema(table_name.as_str())
-            .await?;
-        Self::new_with_schema(provider, table_name, schema)
-    }
-
-    pub fn new_with_schema(
-        provider: Arc<SQLFederationProvider>,
-        table_name: String,
-        schema: SchemaRef,
-    ) -> Result<Self> {
-        Ok(Self {
-            provider,
-            table_name,
-            schema,
-        })
-    }
-
-    pub fn table_name(&self) -> &str {
-        self.table_name.as_str()
-    }
-}
-
-impl FederatedTableSource for SQLTableSource {
-    fn federation_provider(&self) -> Arc<dyn FederationProvider> {
-        Arc::clone(&self.provider) as Arc<dyn FederationProvider>
-    }
-}
-
-impl TableSource for SQLTableSource {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn schema(&self) -> SchemaRef {
-        Arc::clone(&self.schema)
-    }
-    fn table_type(&self) -> TableType {
-        TableType::Temporary
     }
 }
