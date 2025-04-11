@@ -1,12 +1,7 @@
 use std::{any::Any, sync::Arc};
 
 use async_trait::async_trait;
-use datafusion::{
-    catalog::SchemaProvider,
-    datasource::TableProvider,
-    error::{DataFusionError, Result},
-    sql::TableReference,
-};
+use datafusion::{catalog::SchemaProvider, datasource::TableProvider, error::Result};
 use futures::future::join_all;
 
 use super::{table::SQLTable, RemoteTableRef, SQLTableSource};
@@ -22,44 +17,27 @@ impl SQLSchemaProvider {
     /// Creates a new SQLSchemaProvider from a [`SQLFederationProvider`].
     /// Initializes the schema provider by fetching table names and schema from the federation provider's executor,
     pub async fn new(provider: Arc<SQLFederationProvider>) -> Result<Self> {
-        let executor = Arc::clone(&provider.executor);
-        let tables = executor
+        let tables = Arc::clone(&provider.executor)
             .table_names()
             .await?
             .iter()
             .map(RemoteTableRef::try_from)
             .collect::<Result<Vec<_>>>()?;
 
-        let tasks = tables
-            .into_iter()
-            .map(|table_ref| {
-                let provider = Arc::clone(&provider);
-                async move { SQLTableSource::new(provider, table_ref).await }
-            })
-            .collect::<Vec<_>>();
-
-        let tables = join_all(tasks)
-            .await
-            .into_iter()
-            .map(|res| res.map(Arc::new))
-            .collect::<Result<Vec<_>>>()?;
-
-        Ok(Self { tables })
+        Self::new_with_table_references(provider, tables).await
     }
 
     /// Creates a new SQLSchemaProvider from a SQLFederationProvider and a list of table references.
     /// Fetches the schema for each table using the executor's implementation.
-    pub async fn new_with_tables<T>(
+    pub async fn new_with_tables<T: AsRef<str>>(
         provider: Arc<SQLFederationProvider>,
-        tables: Vec<T>,
-    ) -> Result<Self>
-    where
-        T: TryInto<RemoteTableRef, Error = DataFusionError>,
-    {
+        tables: impl IntoIterator<Item = T>,
+    ) -> Result<Self> {
         let tables = tables
             .into_iter()
-            .map(|t| t.try_into())
-            .collect::<Result<Vec<RemoteTableRef>>>()?;
+            .map(|x| RemoteTableRef::try_from(x.as_ref()))
+            .collect::<Result<Vec<_>>>()?;
+
         let futures: Vec<_> = tables
             .into_iter()
             .map(|t| SQLTableSource::new(Arc::clone(&provider), t))
@@ -82,6 +60,19 @@ impl SQLSchemaProvider {
                 .collect(),
         }
     }
+
+    pub async fn new_with_table_references(
+        provider: Arc<SQLFederationProvider>,
+        tables: Vec<RemoteTableRef>,
+    ) -> Result<Self> {
+        let futures: Vec<_> = tables
+            .into_iter()
+            .map(|t| SQLTableSource::new(Arc::clone(&provider), t))
+            .collect();
+        let results: Result<Vec<_>> = join_all(futures).await.into_iter().collect();
+        let tables = results?.into_iter().map(Arc::new).collect();
+        Ok(Self { tables })
+    }
 }
 
 #[async_trait]
@@ -93,16 +84,16 @@ impl SchemaProvider for SQLSchemaProvider {
     fn table_names(&self) -> Vec<String> {
         self.tables
             .iter()
-            .map(|source| source.table_reference().to_quoted_string())
+            .map(|source| source.table_reference().to_string())
             .collect()
     }
 
     async fn table(&self, name: &str) -> Result<Option<Arc<dyn TableProvider>>> {
-        if let Some(source) = self.tables.iter().find(|s| {
-            s.table_reference()
-                .to_quoted_string()
-                .eq_ignore_ascii_case(name)
-        }) {
+        if let Some(source) = self
+            .tables
+            .iter()
+            .find(|s| s.table_reference().to_string().eq(name))
+        {
             let adaptor = FederatedTableProviderAdaptor::new(source.clone());
             return Ok(Some(Arc::new(adaptor)));
         }
@@ -110,11 +101,9 @@ impl SchemaProvider for SQLSchemaProvider {
     }
 
     fn table_exist(&self, name: &str) -> bool {
-        self.tables.iter().any(|source| {
-            source
-                .table_reference()
-                .resolved_eq(&TableReference::from(name))
-        })
+        self.tables
+            .iter()
+            .any(|source| source.table_reference().to_string().eq(name))
     }
 }
 
