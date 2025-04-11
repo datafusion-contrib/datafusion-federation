@@ -808,6 +808,33 @@ mod tests {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn test_rewrite_table_scans_preserve_existing_alias() -> Result<()> {
+        init_tracing();
+        let ctx = get_test_df_context();
+
+        let tests = vec![
+            (
+                "SELECT b.a AS app_table_a FROM app_table AS b",
+                r#"SELECT b.a AS app_table_a FROM remote_table AS b"#,
+            ),
+            (
+                "SELECT app_table_a FROM (SELECT a as app_table_a FROM app_table AS b)",
+                r#"SELECT app_table_a FROM (SELECT b.a AS app_table_a FROM remote_table AS b)"#,
+            ),
+            (
+                "SELECT COUNT(b.a) FROM app_table AS b",
+                r#"SELECT count(b.a) FROM remote_table AS b"#,
+            ),
+        ];
+
+        for test in tests {
+            test_sql(&ctx, test.0, test.1).await?;
+        }
+
+        Ok(())
+    }
+
     async fn test_sql(ctx: &SessionContext, sql_query: &str, expected_sql: &str) -> Result<()> {
         let data_frame = ctx.sql(sql_query).await?;
 
