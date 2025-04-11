@@ -2,7 +2,8 @@ use std::ops::ControlFlow;
 
 use datafusion::sql::{
     sqlparser::ast::{
-        FunctionArg, ObjectName, Statement, TableFactor, TableFunctionArgs, VisitMut, VisitorMut,
+        FunctionArg, Ident, ObjectName, Statement, TableAlias, TableFactor, TableFunctionArgs,
+        VisitMut, VisitorMut,
     },
     TableReference,
 };
@@ -83,14 +84,23 @@ impl VisitorMut for TableArgReplace {
         &mut self,
         table_factor: &mut TableFactor,
     ) -> ControlFlow<Self::Break> {
-        if let TableFactor::Table { name, args, .. } = table_factor {
+        if let TableFactor::Table {
+            name, args, alias, ..
+        } = table_factor
+        {
             let name_as_tableref = name_to_table_reference(name);
-            if let Some(arg) = self
+            if let Some((table, arg)) = self
                 .tables
                 .iter()
                 .find(|(t, _)| t.resolved_eq(&name_as_tableref))
             {
-                *args = Some(arg.1.clone());
+                *args = Some(arg.clone());
+                if alias.is_none() {
+                    *alias = Some(TableAlias {
+                        name: Ident::new(table.table()),
+                        columns: vec![],
+                    })
+                }
             }
         }
         ControlFlow::Continue(())
