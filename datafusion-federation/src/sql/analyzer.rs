@@ -880,4 +880,94 @@ mod tests {
 
         Ok(())
     }
+
+    fn get_multipart_test_table_provider() -> Arc<dyn TableProvider> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::Int64, false),
+            Field::new("b", DataType::Utf8, false),
+            Field::new("c", DataType::Date32, false),
+        ]));
+        let table = Arc::new(TestTable::new("default.remote_table".to_string(), schema));
+        let provider = Arc::new(SQLFederationProvider::new(Arc::new(TestExecutor)));
+        let table_source = Arc::new(SQLTableSource { provider, table });
+        Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+
+    fn get_multipart_test_df_context() -> SessionContext {
+        let ctx = SessionContext::new();
+        let catalog = ctx
+            .catalog("datafusion")
+            .expect("default catalog is datafusion");
+        let foo_schema = Arc::new(MemorySchemaProvider::new()) as Arc<dyn SchemaProvider>;
+        catalog
+            .register_schema("foo", Arc::clone(&foo_schema))
+            .expect("to register schema");
+        foo_schema
+            .register_table("df_table".to_string(), get_multipart_test_table_provider())
+            .expect("to register table");
+
+        let public_schema = catalog
+            .schema("public")
+            .expect("public schema should exist");
+        public_schema
+            .register_table("app_table".to_string(), get_multipart_test_table_provider())
+            .expect("to register table");
+
+        ctx
+    }
+
+    #[tokio::test]
+    async fn test_rewrite_multipart_table() -> Result<()> {
+        init_tracing();
+        let ctx = get_multipart_test_df_context();
+
+        let tests = vec![
+            (
+                "SELECT MAX(a) FROM foo.df_table",
+                r#"SELECT max(remote_table.a) FROM "default".remote_table"#,
+            ),
+            (
+                "SELECT foo.df_table.a FROM foo.df_table",
+                r#"SELECT remote_table.a FROM "default".remote_table"#,
+            ),
+            (
+                "SELECT MIN(a) FROM foo.df_table",
+                r#"SELECT min(remote_table.a) FROM "default".remote_table"#,
+            ),
+            (
+                "SELECT AVG(a) FROM foo.df_table",
+                r#"SELECT avg(remote_table.a) FROM "default".remote_table"#,
+            ),
+            (
+                "SELECT COUNT(a) as cnt FROM foo.df_table",
+                r#"SELECT count(remote_table.a) AS cnt FROM "default".remote_table"#,
+            ),
+            (
+                "SELECT app_table from (SELECT a as app_table FROM app_table) b",
+                r#"SELECT b.app_table FROM (SELECT remote_table.a AS app_table FROM "default".remote_table) AS b"#,
+            ),
+            (
+                "SELECT MAX(app_table) from (SELECT a as app_table FROM app_table) b",
+                r#"SELECT max(b.app_table) FROM (SELECT remote_table.a AS app_table FROM "default".remote_table) AS b"#,
+            ),
+            (
+                "SELECT COUNT(app_table_a) FROM (SELECT a as app_table_a FROM app_table)",
+                r#"SELECT count(app_table_a) FROM (SELECT remote_table.a AS app_table_a FROM "default".remote_table)"#,
+            ),
+            (
+                "SELECT app_table_a FROM (SELECT a as app_table_a FROM app_table)",
+                r#"SELECT app_table_a FROM (SELECT remote_table.a AS app_table_a FROM "default".remote_table)"#,
+            ),
+            (
+                "SELECT aapp_table FROM (SELECT a as aapp_table FROM app_table)",
+                r#"SELECT aapp_table FROM (SELECT remote_table.a AS aapp_table FROM "default".remote_table)"#,
+            ),
+        ];
+
+        for test in tests {
+            test_sql(&ctx, test.0, test.1).await?;
+        }
+
+        Ok(())
+    }
 }
