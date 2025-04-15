@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.3.7...v0.4.0) - 2025-04-14
+
+### Other
+
+- Refactor the SQL implementation to include the `SQLTable` trait and add support for parameterized views. ([#117](https://github.com/datafusion-contrib/datafusion-federation/pull/117))
+
 ## [0.3.7](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.3.6...v0.3.7) - 2025-04-03
 
 ### Other
