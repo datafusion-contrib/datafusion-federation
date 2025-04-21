@@ -14,7 +14,7 @@ repository = "https://github.com/datafusion-contrib/datafusion-federation"
 arrow-json = "54"
 async-stream = "0.3.5"
 async-trait = "0.1.83"
-datafusion = "46.0.1"
+datafusion = "47.0.0"
 datafusion-federation = { path = "./datafusion-federation", version = "0.4.0" }
 futures = "0.3.31"
 tokio = { version = "1.41", features = ["full"] }
