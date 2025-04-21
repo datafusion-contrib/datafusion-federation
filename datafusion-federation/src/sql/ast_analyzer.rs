@@ -28,7 +28,7 @@ pub fn replace_table_args_analyzer(mut visitor: TableArgReplace) -> AstAnalyzer 
 /// let mut analyzer = TableArgReplace::default().with(
 ///     TableReference::parse_str("table1"),
 ///     vec![FunctionArg::Unnamed(
-///         Expr::Value(
+///         Expr::value(
 ///             Value::Number("1".to_string(), false),
 ///         )
 ///         .into(),
@@ -108,9 +108,18 @@ impl VisitorMut for TableArgReplace {
 }
 
 fn name_to_table_reference(name: &ObjectName) -> TableReference {
-    let first = name.0.first().map(|n| n.value.to_string());
-    let second = name.0.get(1).map(|n| n.value.to_string());
-    let third = name.0.get(2).map(|n| n.value.to_string());
+    let first = name
+        .0
+        .first()
+        .map(|n| n.as_ident().expect("expected Ident").value.to_string());
+    let second = name
+        .0
+        .get(1)
+        .map(|n| n.as_ident().expect("expected Ident").value.to_string());
+    let third = name
+        .0
+        .get(2)
+        .map(|n| n.as_ident().expect("expected Ident").value.to_string());
 
     match (first, second, third) {
         (Some(first), Some(second), Some(third)) => TableReference::full(first, second, third),

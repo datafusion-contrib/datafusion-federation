@@ -5,7 +5,7 @@ use datafusion::{
     sql::{
         sqlparser::{
             self,
-            ast::FunctionArg,
+            ast::{FunctionArg, ObjectNamePart},
             dialect::{Dialect, GenericDialect},
             tokenizer::Token,
         },
@@ -15,14 +15,16 @@ use datafusion::{
 
 /// A multipart identifier to a remote table, view or parameterized view.
 ///
-/// RemoteTableRef can be created by parsing from a string represeting a table obbject with optional
+/// RemoteTableRef can be created by parsing from a string representing a table object with optional
 /// ```rust
+/// use datafusion_federation::sql::RemoteTableRef;
+/// use datafusion::sql::sqlparser::dialect::PostgreSqlDialect;
 ///
 /// RemoteTableRef::try_from("myschema.table");
 /// RemoteTableRef::try_from(r#"myschema."Table""#);
 /// RemoteTableRef::try_from("myschema.view('obj')");
 ///
-/// RemoteTableRef::parse_with_dialect("myschema.view(name = 'obj')", &PostgresSqlDialect {});
+/// RemoteTableRef::parse_with_dialect("myschema.view(name = 'obj')", &PostgreSqlDialect {});
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct RemoteTableRef {
@@ -41,7 +43,7 @@ impl RemoteTableRef {
         Self::parse_with_dialect(s, &GenericDialect {})
     }
 
-    /// Create new using a specfic instance of dialect.
+    /// Create new using a specific instance of dialect.
     pub fn parse_with_dialect(s: &str, dialect: &dyn Dialect) -> Result<Self, DataFusionError> {
         let mut parser = sqlparser::parser::Parser::new(dialect).try_with_sql(s)?;
         let name = parser.parse_object_name(true)?;
@@ -52,15 +54,23 @@ impl RemoteTableRef {
         };
 
         let table_ref = match (name.0.first(), name.0.get(1), name.0.get(2)) {
-            (Some(catalog), Some(schema), Some(table)) => TableReference::full(
+            (
+                Some(ObjectNamePart::Identifier(catalog)),
+                Some(ObjectNamePart::Identifier(schema)),
+                Some(ObjectNamePart::Identifier(table)),
+            ) => TableReference::full(
                 catalog.value.clone(),
                 schema.value.clone(),
                 table.value.clone(),
             ),
-            (Some(schema), Some(table), None) => {
-                TableReference::partial(schema.value.clone(), table.value.clone())
+            (
+                Some(ObjectNamePart::Identifier(schema)),
+                Some(ObjectNamePart::Identifier(table)),
+                None,
+            ) => TableReference::partial(schema.value.clone(), table.value.clone()),
+            (Some(ObjectNamePart::Identifier(table)), None, None) => {
+                TableReference::bare(table.value.clone())
             }
-            (Some(table), None, None) => TableReference::bare(table.value.clone()),
             _ => {
                 return Err(DataFusionError::NotImplemented(
                     "Unable to parse string into TableReference".to_string(),
@@ -166,8 +176,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::bare("table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -176,8 +186,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::bare("Table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -189,8 +199,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::bare("table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -199,8 +209,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::bare("Table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -223,8 +233,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::partial("schema", "table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -233,8 +243,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::partial("schema", "Table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -246,8 +256,8 @@ mod tests {
         let expected = RemoteTableRef::from((
             TableReference::partial("schema", "table"),
             vec![
-                FunctionArg::Unnamed(Expr::Value(Value::Number("1".to_string(), false)).into()),
-                FunctionArg::Unnamed(Expr::Value(Value::Number("2".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("1".to_string(), false)).into()),
+                FunctionArg::Unnamed(Expr::value(Value::Number("2".to_string(), false)).into()),
             ],
         ));
         assert_eq!(table_ref, expected);
@@ -265,12 +275,12 @@ mod tests {
             vec![
                 FunctionArg::ExprNamed {
                     name: ast::Expr::Identifier(Ident::new("user_id")),
-                    arg: Expr::Value(Value::Number("1".to_string(), false)).into(),
+                    arg: Expr::value(Value::Number("1".to_string(), false)).into(),
                     operator: FunctionArgOperator::RightArrow,
                 },
                 FunctionArg::ExprNamed {
                     name: ast::Expr::Identifier(Ident::new("age")),
-                    arg: Expr::Value(Value::Number("2".to_string(), false)).into(),
+                    arg: Expr::value(Value::Number("2".to_string(), false)).into(),
                     operator: FunctionArgOperator::RightArrow,
                 },
             ],

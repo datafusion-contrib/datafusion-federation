@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use datafusion::{
-    common::Column,
+    common::{Column, Spans},
     logical_expr::{
         expr::{
             AggregateFunction, AggregateFunctionParams, Alias, Exists, InList, InSubquery,
@@ -192,6 +192,7 @@ fn rewrite_table_scans_in_expr(
             Ok(Expr::ScalarSubquery(Subquery {
                 subquery: Arc::new(new_subquery),
                 outer_ref_columns,
+                spans: Spans::new(),
             }))
         }
         Expr::BinaryExpr(binary_expr) => {
@@ -465,6 +466,7 @@ fn rewrite_table_scans_in_expr(
             let subquery = Subquery {
                 subquery: Arc::new(subquery_plan),
                 outer_ref_columns,
+                spans: Spans::new(),
             };
             Ok(Expr::Exists(Exists::new(subquery, exists.negated)))
         }
@@ -480,6 +482,7 @@ fn rewrite_table_scans_in_expr(
             let subquery = Subquery {
                 subquery: Arc::new(subquery_plan),
                 outer_ref_columns,
+                spans: Spans::new(),
             };
             Ok(Expr::InSubquery(InSubquery::new(
                 Box::new(expr),
