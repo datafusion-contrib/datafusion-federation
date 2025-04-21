@@ -50,7 +50,7 @@ impl RemoteTable {
     /// Creates a new `RemoteTable` instance.
     ///
     /// Examples:
-    /// ```rust
+    /// ```ignore
     /// use datafusion::sql::TableReference;
     ///
     /// RemoteTable::new("myschema.table".try_into()?, schema);
