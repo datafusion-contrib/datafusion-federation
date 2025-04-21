@@ -505,7 +505,7 @@ mod tests {
         let expected = vec![
             "SELECT table_a1.a, table_a1.b, table_a1.c FROM table_a1",
             "SELECT table_a2.a, table_a2.b, table_a2.c FROM table_a2",
-            "SELECT table_b1.a, table_b1.b, table_b1.c FROM table_b1(1)",
+            "SELECT table_b1.a, table_b1.b, table_b1.c FROM table_b1(1) AS table_b1",
         ];
 
         assert_eq!(
@@ -593,7 +593,7 @@ mod tests {
         });
 
         let expected = vec![
-            r#"SELECT "table".a, "table".b, "table".c FROM "default"."table" UNION ALL SELECT "Table".a, "Table".b, "Table".c FROM "default"."Table"(1)"#,
+            r#"SELECT "table".a, "table".b, "table".c FROM "default"."table" UNION ALL SELECT "Table".a, "Table".b, "Table".c FROM "default"."Table"(1) AS Table"#,
         ];
 
         assert_eq!(
