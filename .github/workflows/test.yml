@@ -15,7 +15,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo check
+      - run: cargo check --all-features
 
   test:
     name: Test
@@ -29,7 +29,7 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo test
+      - run: cargo test --all-features
 
   rustfmt:
     name: Rustfmt
@@ -69,5 +69,5 @@ jobs:
       - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - run: cargo build --all 
-      - run: cargo package -p datafusion-federation --allow-dirty
+      - run: cargo build --all --all-features
+      - run: cargo package -p datafusion-federation --allow-dirty --all-features
