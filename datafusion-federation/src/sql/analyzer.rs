@@ -441,10 +441,10 @@ fn rewrite_table_scans_in_expr(
                 window_frame: wf.params.window_frame,
                 null_treatment: wf.params.null_treatment,
             };
-            Ok(Expr::WindowFunction(WindowFunction {
+            Ok(Expr::WindowFunction(Box::new(WindowFunction {
                 fun: wf.fun,
                 params,
-            }))
+            })))
         }
         Expr::InList(il) => {
             let expr = rewrite_table_scans_in_expr(*il.expr, known_rewrites)?;
@@ -563,7 +563,7 @@ fn rewrite_table_scans_in_expr(
             let expr = rewrite_table_scans_in_expr(*unnest.expr, known_rewrites)?;
             Ok(Expr::Unnest(Unnest::new(expr)))
         }
-        Expr::ScalarVariable(_, _) | Expr::Literal(_) | Expr::Placeholder(_) => Ok(expr),
+        Expr::ScalarVariable(_, _) | Expr::Literal(_, _) | Expr::Placeholder(_) => Ok(expr),
     }
 }
 
