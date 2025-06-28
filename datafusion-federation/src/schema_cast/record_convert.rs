@@ -33,13 +33,12 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::UnableToConvertRecordBatch { source } => {
-                write!(f, "Unable to convert record batch: {}", source)
+                write!(f, "Unable to convert record batch: {source}")
             }
             Error::UnexpectedNumberOfColumns { expected, found } => {
                 write!(
                     f,
-                    "Unexpected number of columns. Expected: {}, Found: {}",
-                    expected, found
+                    "Unexpected number of columns. Expected: {expected}, Found: {found}",
                 )
             }
         }
