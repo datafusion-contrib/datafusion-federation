@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.3...v0.4.4) - 2025-06-30
+
+### Other
+
+- Minor clippy fixes introduced in rust 1.88 ([#132](https://github.com/datafusion-contrib/datafusion-federation/pull/132))
+
 ## [0.4.3](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.2...v0.4.3) - 2025-06-22
 
 ### Other
