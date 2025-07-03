@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use core::fmt;
 use datafusion::{
     arrow::datatypes::SchemaRef,
+    common::Statistics,
     error::Result,
     logical_expr::LogicalPlan,
     physical_plan::SendableRecordBatchStream,
@@ -42,6 +43,18 @@ pub trait SQLExecutor: Sync + Send {
 
     /// Execute a SQL query
     fn execute(&self, query: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream>;
+
+    /// Returns statistics for this `SQLExecutor` node. If statistics are not available, it should
+    /// return [`Statistics::new_unknown`] (the default), not an error. See the `ExecutionPlan`
+    /// trait.
+    fn partition_statistics(
+        &self,
+        _partition: Option<usize>,
+        _query: &str,
+        schema: SchemaRef,
+    ) -> Result<Statistics> {
+        Ok(Statistics::new_unknown(&schema))
+    }
 
     /// Returns the tables provided by the remote
     async fn table_names(&self) -> Result<Vec<String>>;
