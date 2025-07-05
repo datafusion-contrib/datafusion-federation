@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
     common::tree_node::{Transformed, TreeNode},
+    common::Statistics,
     error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{Extension, LogicalPlan},
@@ -342,6 +343,10 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
     fn properties(&self) -> &PlanProperties {
         &self.props
+    }
+
+    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Statistics> {
+        self.executor.statistics(&self.final_sql()?, self.schema())
     }
 }
 
