@@ -47,12 +47,7 @@ pub trait SQLExecutor: Sync + Send {
     /// Returns statistics for this `SQLExecutor` node. If statistics are not available, it should
     /// return [`Statistics::new_unknown`] (the default), not an error. See the `ExecutionPlan`
     /// trait.
-    fn partition_statistics(
-        &self,
-        _partition: Option<usize>,
-        _query: &str,
-        schema: SchemaRef,
-    ) -> Result<Statistics> {
+    fn statistics(&self, _query: &str, schema: SchemaRef) -> Result<Statistics> {
         Ok(Statistics::new_unknown(&schema))
     }
 

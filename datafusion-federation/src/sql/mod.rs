@@ -345,9 +345,8 @@ impl ExecutionPlan for VirtualExecutionPlan {
         &self.props
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> Result<Statistics> {
-        self.executor
-            .partition_statistics(partition, &self.final_sql()?, self.schema())
+    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Statistics> {
+        self.executor.statistics(&self.final_sql()?, self.schema())
     }
 }
 
