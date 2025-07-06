@@ -167,10 +167,14 @@ impl FederationOptimizerRule {
             return Ok((None, ScanResult::None));
         }
 
+        // Unnest LogicalPlans should not be included in federation, otherwise an error will occur.
+        // By flagging inputs as root, they can be federated individually.
+        let must_be_root = matches!(plan, LogicalPlan::Unnest(_));
+
         // Recursively optimize inputs
         let input_results = inputs
             .iter()
-            .map(|i| self.optimize_plan_recursively(i, false, _config))
+            .map(|i| self.optimize_plan_recursively(i, must_be_root, _config))
             .collect::<Result<Vec<_>>>()?;
 
         // Aggregate the input providers
@@ -178,7 +182,8 @@ impl FederationOptimizerRule {
             sole_provider.merge(scan_result.clone());
         });
 
-        if sole_provider.is_none() {
+        // If the provider must be root, it's ambiguous, allow federation of inputs
+        if sole_provider.is_none() && !must_be_root {
             // No providers found
             // TODO: Is/should this be reachable?
             return Ok((None, ScanResult::None));
@@ -249,7 +254,13 @@ impl FederationOptimizerRule {
         };
 
         // Construct the optimized plan
-        let new_plan = plan.with_new_exprs(new_expressions, new_inputs)?;
+        let new_plan = match plan {
+            LogicalPlan::Unnest(_) => {
+                // Unnest doesn't accept expressions in with_new_exprs despite returning them
+                plan.with_new_exprs(vec![], new_inputs)?
+            }
+            _ => plan.with_new_exprs(new_expressions, new_inputs)?,
+        };
 
         // Return the federated plan
         Ok((Some(new_plan), ScanResult::Ambiguous))
@@ -365,4 +376,156 @@ pub fn get_table_source(
 
     // Return original FederatedTableSource
     Ok(Some(Arc::clone(&wrapper.source)))
+}
+
+#[cfg(all(test, feature = "sql"))]
+mod tests {
+    use super::*;
+    use crate::sql::{
+        RemoteTable, RemoteTableRef, SQLExecutor, SQLFederationProvider, SQLTableSource,
+    };
+    use async_trait::async_trait;
+    use datafusion::{
+        arrow::datatypes::{DataType, Field, Schema, SchemaRef},
+        common::{DFSchema, UnnestOptions},
+        datasource::{DefaultTableSource, TableProvider},
+        execution::SendableRecordBatchStream,
+        logical_expr::{LogicalPlanBuilder, Unnest},
+        optimizer::OptimizerContext,
+        prelude::*,
+        sql::unparser::{self, dialect::Dialect},
+    };
+    use std::sync::Arc;
+
+    #[derive(Debug, Clone)]
+    struct TestExecutor {
+        compute_context: String,
+    }
+
+    #[async_trait]
+    impl SQLExecutor for TestExecutor {
+        fn name(&self) -> &str {
+            "TestExecutor"
+        }
+
+        fn compute_context(&self) -> Option<String> {
+            Some(self.compute_context.clone())
+        }
+
+        fn dialect(&self) -> Arc<dyn Dialect> {
+            Arc::new(unparser::dialect::DefaultDialect {})
+        }
+
+        fn execute(
+            &self,
+            _query: &str,
+            _schema: SchemaRef,
+        ) -> datafusion::error::Result<SendableRecordBatchStream> {
+            unimplemented!()
+        }
+
+        async fn table_names(&self) -> datafusion::error::Result<Vec<String>> {
+            unimplemented!()
+        }
+
+        async fn get_table_schema(
+            &self,
+            _table_name: &str,
+        ) -> datafusion::error::Result<SchemaRef> {
+            unimplemented!()
+        }
+    }
+
+    fn get_federated_table_provider() -> Arc<dyn TableProvider> {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new(
+                "array_col",
+                DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+                false,
+            ),
+        ]));
+        let table_ref = RemoteTableRef::try_from("remote_table".to_string()).unwrap();
+        let table = Arc::new(RemoteTable::new(table_ref, schema));
+        let executor = TestExecutor {
+            compute_context: "test".to_string(),
+        };
+        let provider = Arc::new(SQLFederationProvider::new(Arc::new(executor)));
+        let table_source = Arc::new(SQLTableSource { provider, table });
+        Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+
+    #[test]
+    fn test_federation_optimizer_rule_handles_unnest() {
+        // Test that FederationOptimizerRule::rewrite can handle plans containing Unnest
+        // This verifies the fix for the Unnest with_new_exprs issue
+
+        // Create a federated table provider that will trigger transformation
+        let federated_provider = get_federated_table_provider();
+        let table_source = Arc::new(DefaultTableSource::new(federated_provider));
+
+        // Create a table scan
+        let table_scan = LogicalPlanBuilder::scan("test_table", table_source, None)
+            .unwrap()
+            .build()
+            .unwrap();
+
+        // Create a DFSchema for the Unnest
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, false),
+            Field::new(
+                "array_col",
+                DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
+                false,
+            ),
+        ]));
+        let df_schema = DFSchema::try_from(schema.as_ref().clone()).unwrap();
+
+        // Create an Unnest plan on top of the table scan
+        let unnest_plan = LogicalPlan::Unnest(Unnest {
+            input: Arc::new(table_scan),
+            exec_columns: vec![Column::from_name("array_col")],
+            list_type_columns: vec![(
+                0,
+                datafusion::logical_expr::ColumnUnnestList {
+                    output_column: Column::from_name("array_col"),
+                    depth: 1,
+                },
+            )],
+            struct_type_columns: vec![],
+            dependency_indices: vec![],
+            schema: Arc::new(df_schema),
+            options: UnnestOptions::default(),
+        });
+
+        // Test the FederationOptimizerRule
+        let optimizer_rule = FederationOptimizerRule::new();
+        let config = OptimizerContext::new();
+
+        // This should not panic or fail due to the Unnest with_new_exprs issue
+        let result = optimizer_rule.rewrite(unnest_plan, &config);
+
+        // The rewrite should succeed (whether it transforms or not depends on federation setup)
+        assert!(
+            result.is_ok(),
+            "FederationOptimizerRule should handle Unnest plans without error"
+        );
+
+        // Verify we get a transformed result back
+        let transformed = result.unwrap();
+
+        // The key assertion: the plan should be transformed (Transformed::yes)
+        // This proves our fix is working - before the fix, this would panic during with_new_exprs
+        assert!(
+            transformed.transformed,
+            "Plan should be transformed (Transformed::yes) - this validates the Unnest fix
+        "
+        );
+
+        // Verify the transformed plan has a valid schema
+        assert!(
+            transformed.data.schema().fields().len() > 0,
+            "Result should have a valid schema"
+        );
+    }
 }
