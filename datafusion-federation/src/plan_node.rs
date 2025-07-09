@@ -16,8 +16,8 @@ use datafusion::{
 };
 
 pub struct FederatedPlanNode {
-    plan: LogicalPlan,
-    planner: Arc<dyn FederationPlanner>,
+    pub plan: LogicalPlan,
+    pub planner: Arc<dyn FederationPlanner>,
 }
 
 impl FederatedPlanNode {

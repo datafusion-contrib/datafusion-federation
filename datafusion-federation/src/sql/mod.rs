@@ -28,7 +28,7 @@ use datafusion::{
 
 pub use executor::{AstAnalyzer, LogicalOptimizer, SQLExecutor, SQLExecutorRef};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider};
-pub use table::{RemoteTable, SQLTableSource};
+pub use table::{RemoteTable, SQLTable, SQLTableSource};
 pub use table_reference::RemoteTableRef;
 
 use crate::{
@@ -38,8 +38,8 @@ use crate::{
 // SQLFederationProvider provides federation to SQL DMBSs.
 #[derive(Debug)]
 pub struct SQLFederationProvider {
-    optimizer: Arc<Optimizer>,
-    executor: Arc<dyn SQLExecutor>,
+    pub optimizer: Arc<Optimizer>,
+    pub executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationProvider {
@@ -123,8 +123,8 @@ impl OptimizerRule for SQLFederationOptimizerRule {
 }
 
 #[derive(Debug)]
-struct SQLFederationPlanner {
-    executor: Arc<dyn SQLExecutor>,
+pub struct SQLFederationPlanner {
+    pub executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationPlanner {
