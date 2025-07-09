@@ -1,5 +1,6 @@
 use async_stream::stream;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::Statistics;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
@@ -112,5 +113,9 @@ impl ExecutionPlan for SchemaCastScanExec {
                 }
             },
         )))
+    }
+
+    fn partition_statistics(&self, partition: Option<usize>) -> Result<Statistics> {
+        self.input.partition_statistics(partition)
     }
 }
