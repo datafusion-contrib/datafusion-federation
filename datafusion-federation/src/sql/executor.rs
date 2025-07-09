@@ -47,8 +47,8 @@ pub trait SQLExecutor: Sync + Send {
     /// Returns statistics for this `SQLExecutor` node. If statistics are not available, it should
     /// return [`Statistics::new_unknown`] (the default), not an error. See the `ExecutionPlan`
     /// trait.
-    fn statistics(&self, _query: &str, schema: SchemaRef) -> Result<Statistics> {
-        Ok(Statistics::new_unknown(&schema))
+    async fn statistics(&self, plan: &LogicalPlan) -> Result<Statistics> {
+        Ok(Statistics::new_unknown(plan.schema().as_arrow()))
     }
 
     /// Returns the tables provided by the remote
