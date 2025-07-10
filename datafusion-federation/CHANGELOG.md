@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.4...v0.4.5) - 2025-07-09
+
+### Other
+
+- Add ability to set statistics in the SQLExecutor ([#134](https://github.com/datafusion-contrib/datafusion-federation/pull/134))
+
 ## [0.4.4](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.3...v0.4.4) - 2025-06-30
 
 ### Other
