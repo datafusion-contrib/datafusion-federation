@@ -154,7 +154,7 @@ impl FederationPlanner for SQLFederationPlanner {
 }
 
 #[derive(Debug, Clone)]
-struct VirtualExecutionPlan {
+pub struct VirtualExecutionPlan {
     plan: LogicalPlan,
     executor: Arc<dyn SQLExecutor>,
     props: PlanProperties,
@@ -176,6 +176,18 @@ impl VirtualExecutionPlan {
             props,
             statistics,
         }
+    }
+
+    pub fn plan(&self) -> &LogicalPlan {
+        &self.plan
+    }
+
+    pub fn executor(&self) -> &Arc<dyn SQLExecutor> {
+        &self.executor
+    }
+
+    pub fn statistics(&self) -> &Statistics {
+        &self.statistics
     }
 
     fn schema(&self) -> SchemaRef {
