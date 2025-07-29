@@ -387,17 +387,14 @@ fn rewrite_table_scans_in_expr(
             let order_by = af
                 .params
                 .order_by
-                .map(|e| {
-                    e.into_iter()
-                        .map(|sort| {
-                            Ok(Sort {
-                                expr: rewrite_table_scans_in_expr(sort.expr, known_rewrites)?,
-                                ..sort
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()
+                .into_iter()
+                .map(|sort| {
+                    Ok(Sort {
+                        expr: rewrite_table_scans_in_expr(sort.expr, known_rewrites)?,
+                        ..sort
+                    })
                 })
-                .transpose()?;
+                .collect::<Result<Vec<_>>>()?;
             let params = AggregateFunctionParams {
                 args,
                 distinct: af.params.distinct,

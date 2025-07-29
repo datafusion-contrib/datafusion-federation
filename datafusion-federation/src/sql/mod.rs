@@ -12,6 +12,7 @@ use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
     common::tree_node::{Transformed, TreeNode},
+    common::Statistics,
     error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{Extension, LogicalPlan},
@@ -27,7 +28,7 @@ use datafusion::{
 
 pub use executor::{AstAnalyzer, LogicalOptimizer, SQLExecutor, SQLExecutorRef};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider};
-pub use table::{RemoteTable, SQLTableSource};
+pub use table::{RemoteTable, SQLTable, SQLTableSource};
 pub use table_reference::RemoteTableRef;
 
 use crate::{
@@ -37,8 +38,8 @@ use crate::{
 // SQLFederationProvider provides federation to SQL DMBSs.
 #[derive(Debug)]
 pub struct SQLFederationProvider {
-    optimizer: Arc<Optimizer>,
-    executor: Arc<dyn SQLExecutor>,
+    pub optimizer: Arc<Optimizer>,
+    pub executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationProvider {
@@ -122,8 +123,8 @@ impl OptimizerRule for SQLFederationOptimizerRule {
 }
 
 #[derive(Debug)]
-struct SQLFederationPlanner {
-    executor: Arc<dyn SQLExecutor>,
+pub struct SQLFederationPlanner {
+    pub executor: Arc<dyn SQLExecutor>,
 }
 
 impl SQLFederationPlanner {
@@ -140,9 +141,12 @@ impl FederationPlanner for SQLFederationPlanner {
         _session_state: &SessionState,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let schema = Arc::new(node.plan().schema().as_arrow().clone());
+        let plan = node.plan().clone();
+        let statistics = self.executor.statistics(&plan).await?;
         let input = Arc::new(VirtualExecutionPlan::new(
-            node.plan().clone(),
+            plan,
             Arc::clone(&self.executor),
+            statistics,
         ));
         let schema_cast_exec = schema_cast::SchemaCastScanExec::new(input, schema);
         Ok(Arc::new(schema_cast_exec))
@@ -150,14 +154,15 @@ impl FederationPlanner for SQLFederationPlanner {
 }
 
 #[derive(Debug, Clone)]
-struct VirtualExecutionPlan {
+pub struct VirtualExecutionPlan {
     plan: LogicalPlan,
     executor: Arc<dyn SQLExecutor>,
     props: PlanProperties,
+    statistics: Statistics,
 }
 
 impl VirtualExecutionPlan {
-    pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>) -> Self {
+    pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>, statistics: Statistics) -> Self {
         let schema: Schema = plan.schema().as_ref().into();
         let props = PlanProperties::new(
             EquivalenceProperties::new(Arc::new(schema)),
@@ -169,7 +174,20 @@ impl VirtualExecutionPlan {
             plan,
             executor,
             props,
+            statistics,
         }
+    }
+
+    pub fn plan(&self) -> &LogicalPlan {
+        &self.plan
+    }
+
+    pub fn executor(&self) -> &Arc<dyn SQLExecutor> {
+        &self.executor
+    }
+
+    pub fn statistics(&self) -> &Statistics {
+        &self.statistics
     }
 
     fn schema(&self) -> SchemaRef {
@@ -342,6 +360,10 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
     fn properties(&self) -> &PlanProperties {
         &self.props
+    }
+
+    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Statistics> {
+        Ok(self.statistics.clone())
     }
 }
 
