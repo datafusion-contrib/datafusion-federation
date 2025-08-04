@@ -437,6 +437,7 @@ fn rewrite_table_scans_in_expr(
                 order_by,
                 window_frame: wf.params.window_frame,
                 null_treatment: wf.params.null_treatment,
+                distinct: wf.params.distinct,
             };
             Ok(Expr::WindowFunction(Box::new(WindowFunction {
                 fun: wf.fun,
