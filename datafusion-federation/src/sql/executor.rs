@@ -5,7 +5,7 @@ use datafusion::{
     common::Statistics,
     error::Result,
     logical_expr::LogicalPlan,
-    physical_plan::SendableRecordBatchStream,
+    physical_plan::{metrics::MetricsSet, SendableRecordBatchStream},
     sql::{sqlparser::ast, unparser::dialect::Dialect},
 };
 use std::sync::Arc;
@@ -56,6 +56,11 @@ pub trait SQLExecutor: Sync + Send {
 
     /// Returns the schema of table_name within this [`SQLExecutor`]
     async fn get_table_schema(&self, table_name: &str) -> Result<SchemaRef>;
+
+    /// Returns the execution metrics, if available.
+    fn metrics(&self) -> Option<MetricsSet> {
+        None
+    }
 }
 
 impl fmt::Debug for dyn SQLExecutor {
