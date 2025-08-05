@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.7...v0.4.8) - 2025-08-05
+
+### Other
+
+- Add metrics to `SchemaCastScanExec` and `VirtualExecutionPlan` ([#143](https://github.com/datafusion-contrib/datafusion-federation/pull/143))
+
 ## [0.4.7](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.6...v0.4.7) - 2025-07-29
 
 ### Other
