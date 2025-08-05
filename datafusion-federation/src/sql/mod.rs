@@ -11,8 +11,10 @@ use analyzer::RewriteTableScanAnalyzer;
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
-    common::tree_node::{Transformed, TreeNode},
-    common::Statistics,
+    common::{
+        tree_node::{Transformed, TreeNode},
+        Statistics,
+    },
     error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{Extension, LogicalPlan},
@@ -20,6 +22,7 @@ use datafusion::{
     physical_expr::EquivalenceProperties,
     physical_plan::{
         execution_plan::{Boundedness, EmissionType},
+        metrics::MetricsSet,
         DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
         SendableRecordBatchStream,
     },
@@ -364,6 +367,10 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
     fn partition_statistics(&self, _partition: Option<usize>) -> Result<Statistics> {
         Ok(self.statistics.clone())
+    }
+
+    fn metrics(&self) -> Option<MetricsSet> {
+        self.executor.metrics()
     }
 }
 
