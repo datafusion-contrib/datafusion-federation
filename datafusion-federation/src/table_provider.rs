@@ -73,7 +73,7 @@ impl TableProvider for FederatedTableProviderAdaptor {
 
         self.source.table_type()
     }
-    fn get_logical_plan(&self) -> Option<Cow<LogicalPlan>> {
+    fn get_logical_plan(&self) -> Option<Cow<'_, LogicalPlan>> {
         if let Some(table_provider) = &self.table_provider {
             return table_provider
                 .get_logical_plan()
