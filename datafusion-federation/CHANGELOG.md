@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.8...v0.4.9) - 2025-08-19
+
+### Other
+
+- Cargo clippy 1.89 ([#146](https://github.com/datafusion-contrib/datafusion-federation/pull/146))
+
 ## [0.4.8](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.7...v0.4.8) - 2025-08-05
 
 ### Other
