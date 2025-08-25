@@ -28,7 +28,7 @@ jobs:
       - run: touch target/doc/index.html
       - run: echo "<meta http-equiv=refresh content=0;url=datafusion_federation>" > target/doc/index.html
       - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: target/doc
 
