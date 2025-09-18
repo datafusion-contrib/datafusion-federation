@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.9...v0.4.10) - 2025-09-18
+
+### Other
+
+- Upgrade datafusion to version 50 ([#149](https://github.com/datafusion-contrib/datafusion-federation/pull/149))
+
 ## [0.4.9](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.8...v0.4.9) - 2025-08-19
 
 ### Other
