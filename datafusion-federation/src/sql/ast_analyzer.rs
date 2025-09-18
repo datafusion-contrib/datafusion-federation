@@ -12,7 +12,7 @@ use super::AstAnalyzer;
 
 pub fn replace_table_args_analyzer(mut visitor: TableArgReplace) -> AstAnalyzer {
     let x = move |mut statement: Statement| {
-        VisitMut::visit(&mut statement, &mut visitor);
+        let _ = VisitMut::visit(&mut statement, &mut visitor);
         Ok(statement)
     };
     Box::new(x)
