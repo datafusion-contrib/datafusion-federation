@@ -4,7 +4,7 @@ resolver = "2"
 members = ["datafusion-federation"]
 
 [workspace.package]
-version = "0.4.10"
+version = "0.4.11"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
@@ -15,6 +15,6 @@ arrow-json = "57"
 async-stream = "0.3.5"
 async-trait = "0.1.83"
 datafusion = "51.0.0"
-datafusion-federation = { path = "./datafusion-federation", version = "0.4.10" }
+datafusion-federation = { path = "./datafusion-federation", version = "0.4.11" }
 futures = "0.3.31"
 tokio = { version = "1.41", features = ["full"] }
