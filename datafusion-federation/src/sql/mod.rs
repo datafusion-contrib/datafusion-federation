@@ -166,7 +166,7 @@ pub struct VirtualExecutionPlan {
 
 impl VirtualExecutionPlan {
     pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>, statistics: Statistics) -> Self {
-        let schema: Schema = plan.schema().as_ref().into();
+        let schema: Schema = plan.schema().as_arrow().clone();
         let props = PlanProperties::new(
             EquivalenceProperties::new(Arc::new(schema)),
             Partitioning::UnknownPartitioning(1),
@@ -194,8 +194,8 @@ impl VirtualExecutionPlan {
     }
 
     fn schema(&self) -> SchemaRef {
-        let df_schema = self.plan.schema().as_ref();
-        Arc::new(Schema::from(df_schema))
+        let df_schema = self.plan.schema().as_arrow().clone();
+        Arc::new(df_schema)
     }
 
     fn final_sql(&self) -> Result<String> {
