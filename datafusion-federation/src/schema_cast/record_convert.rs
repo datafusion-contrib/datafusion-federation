@@ -1,5 +1,5 @@
 use datafusion::arrow::{
-    array::{Array, RecordBatch},
+    array::{Array, RecordBatch, RecordBatchOptions},
     compute::cast,
     datatypes::{DataType, IntervalUnit, SchemaRef},
 };
@@ -124,14 +124,15 @@ pub fn try_cast_to(record_batch: RecordBatch, expected_schema: SchemaRef) -> Res
         })
         .collect::<Result<Vec<Arc<dyn Array>>>>()?;
 
-    RecordBatch::try_new(expected_schema, cols)
+    let options = RecordBatchOptions::new().with_row_count(Some(record_batch.num_rows()));
+    RecordBatch::try_new_with_options(expected_schema, cols, &options)
         .map_err(|e| Error::UnableToConvertRecordBatch { source: e })
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use datafusion::arrow::array::LargeStringArray;
+    use datafusion::arrow::array::{LargeStringArray, RecordBatchOptions};
     use datafusion::arrow::{
         array::{Int32Array, StringArray},
         datatypes::{DataType, Field, Schema, TimeUnit},
@@ -173,7 +174,7 @@ mod test {
     #[test]
     fn test_string_to_timestamp_conversion() {
         let result = try_cast_to(batch_input(), to_schema()).expect("converted");
-        let expected = vec![
+        let expected = [
             "+---+-----+---------------------+",
             "| a | b   | c                   |",
             "+---+-----+---------------------+",
@@ -222,7 +223,7 @@ mod test {
     fn test_large_string_to_timestamp_conversion() {
         let result =
             try_cast_to(large_string_batch_input(), large_string_to_schema()).expect("converted");
-        let expected = vec![
+        let expected = [
             "+---+-----+---------------------+",
             "| a | b   | c                   |",
             "+---+-----+---------------------+",
@@ -231,6 +232,17 @@ mod test {
             "| 3 | baz | 2024-01-13T03:18:09 |",
             "+---+-----+---------------------+",
         ];
+        assert_batches_eq!(expected, &[result]);
+    }
+
+    #[test]
+    fn test_convert_empty_batch() {
+        let schema = SchemaRef::new(Schema::empty());
+        let options = RecordBatchOptions::new().with_row_count(Some(10));
+        let batch = RecordBatch::try_new_with_options(schema.clone(), vec![], &options)
+            .expect("failed to create empty batch");
+        let result = try_cast_to(batch, schema).expect("converted");
+        let expected = ["++", "++", "++"];
         assert_batches_eq!(expected, &[result]);
     }
 }
