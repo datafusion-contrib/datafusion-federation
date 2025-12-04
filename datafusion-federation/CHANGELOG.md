@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.11...v0.4.12) - 2025-12-04
+
+### Other
+
+- Fix conversion of empty `RecordBatch` ([#154](https://github.com/datafusion-contrib/datafusion-federation/pull/154))
+
 ## [0.4.11](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.10...v0.4.11) - 2025-11-24
 
 ### Other
