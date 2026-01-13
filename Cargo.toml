@@ -11,7 +11,7 @@ readme = "README.md"
 repository = "https://github.com/datafusion-contrib/datafusion-federation"
 
 [workspace.dependencies]
-arrow-json = "57"
+arrow-json = "57.2"
 async-stream = "0.3"
 async-trait = "0.1"
 datafusion = "52.0"
