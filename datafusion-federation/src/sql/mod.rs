@@ -15,6 +15,7 @@ use datafusion::{
         tree_node::{Transformed, TreeNode},
         Statistics,
     },
+    config::ConfigOptions,
     error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{Extension, LogicalPlan},
@@ -22,8 +23,11 @@ use datafusion::{
     physical_expr::EquivalenceProperties,
     physical_plan::{
         execution_plan::{Boundedness, EmissionType},
+        filter_pushdown::{
+            ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation, PushedDown,
+        },
         metrics::MetricsSet,
-        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
+        DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, PlanProperties,
         SendableRecordBatchStream,
     },
     sql::{sqlparser::ast::Statement, unparser::Unparser},
@@ -162,6 +166,7 @@ pub struct VirtualExecutionPlan {
     executor: Arc<dyn SQLExecutor>,
     props: PlanProperties,
     statistics: Statistics,
+    filters: Vec<Arc<dyn PhysicalExpr>>,
 }
 
 impl VirtualExecutionPlan {
@@ -178,6 +183,7 @@ impl VirtualExecutionPlan {
             executor,
             props,
             statistics,
+            filters: Vec::new(),
         }
     }
 
@@ -358,7 +364,8 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        self.executor.execute(&self.final_sql()?, self.schema())
+        self.executor
+            .execute(&self.final_sql()?, self.schema(), &self.filters)
     }
 
     fn properties(&self) -> &PlanProperties {
@@ -371,6 +378,36 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
     fn metrics(&self) -> Option<MetricsSet> {
         self.executor.metrics()
+    }
+
+    fn handle_child_pushdown_result(
+        &self,
+        _phase: FilterPushdownPhase,
+        child_pushdown_result: ChildPushdownResult,
+        _config: &ConfigOptions,
+    ) -> Result<FilterPushdownPropagation<Arc<dyn ExecutionPlan>>> {
+        let parent_filters: Vec<_> = child_pushdown_result
+            .clone()
+            .parent_filters
+            .into_iter()
+            .map(|f| f.filter)
+            .collect();
+
+        if parent_filters.is_empty() {
+            return Ok(FilterPushdownPropagation {
+                filters: vec![],
+                updated_node: None,
+            });
+        }
+
+        let filters_pushed_down = vec![PushedDown::Yes; parent_filters.len()];
+        let mut node = self.clone();
+        node.filters = parent_filters;
+
+        Ok(FilterPushdownPropagation {
+            filters: filters_pushed_down,
+            updated_node: Some(Arc::new(node)),
+        })
     }
 }
 
@@ -416,7 +453,12 @@ mod tests {
             Arc::new(unparser::dialect::DefaultDialect {})
         }
 
-        fn execute(&self, _query: &str, _schema: SchemaRef) -> Result<SendableRecordBatchStream> {
+        fn execute(
+            &self,
+            _query: &str,
+            _schema: SchemaRef,
+            _filters: &[Arc<dyn PhysicalExpr>],
+        ) -> Result<SendableRecordBatchStream> {
             unimplemented!()
         }
 

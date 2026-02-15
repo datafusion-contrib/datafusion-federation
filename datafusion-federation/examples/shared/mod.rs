@@ -6,7 +6,7 @@ use datafusion::{
     catalog::SchemaProvider,
     error::{DataFusionError, Result},
     execution::context::{SessionContext, SessionState},
-    physical_plan::{stream::RecordBatchStreamAdapter, SendableRecordBatchStream},
+    physical_plan::{stream::RecordBatchStreamAdapter, PhysicalExpr, SendableRecordBatchStream},
     sql::unparser::dialect::{DefaultDialect, Dialect},
 };
 use futures::TryStreamExt;
@@ -50,7 +50,12 @@ impl SQLExecutor for MockSqliteExecutor {
         Some("sqlite_exec".to_string())
     }
 
-    fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
+    fn execute(
+        &self,
+        sql: &str,
+        schema: SchemaRef,
+        _filters: &[Arc<dyn PhysicalExpr>],
+    ) -> Result<SendableRecordBatchStream> {
         // Execute it using the remote datafusion session context
         let future_stream = _execute(self.session.clone(), sql.to_string());
         let stream = futures::stream::once(future_stream).try_flatten();
@@ -103,7 +108,12 @@ impl SQLExecutor for MockPostgresExecutor {
         Some("postgres_exec".to_string())
     }
 
-    fn execute(&self, sql: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream> {
+    fn execute(
+        &self,
+        sql: &str,
+        schema: SchemaRef,
+        _filters: &[Arc<dyn PhysicalExpr>],
+    ) -> Result<SendableRecordBatchStream> {
         // Execute it using the remote datafusion session context
         let future_stream = _execute(self.session.clone(), sql.to_string());
         let stream = futures::stream::once(future_stream).try_flatten();

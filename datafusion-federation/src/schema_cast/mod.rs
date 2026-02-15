@@ -1,12 +1,15 @@
 use async_stream::stream;
 use datafusion::arrow::datatypes::SchemaRef;
 use datafusion::common::Statistics;
+use datafusion::config::ConfigOptions;
 use datafusion::error::{DataFusionError, Result};
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
+use datafusion::physical_plan::filter_pushdown::{FilterDescription, FilterPushdownPhase};
 use datafusion::physical_plan::metrics::{BaselineMetrics, ExecutionPlanMetricsSet, MetricsSet};
 use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
-    DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PlanProperties,
+    DisplayAs, DisplayFormatType, ExecutionPlan, ExecutionPlanProperties, PhysicalExpr,
+    PlanProperties,
 };
 use futures::StreamExt;
 use std::any::Any;
@@ -130,5 +133,14 @@ impl ExecutionPlan for SchemaCastScanExec {
 
     fn metrics(&self) -> Option<MetricsSet> {
         Some(self.metrics_set.clone_inner())
+    }
+
+    fn gather_filters_for_pushdown(
+        &self,
+        _phase: FilterPushdownPhase,
+        parent_filters: Vec<Arc<dyn PhysicalExpr>>,
+        _config: &ConfigOptions,
+    ) -> Result<FilterDescription> {
+        FilterDescription::from_children(parent_filters, &self.children())
     }
 }
