@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.14...v0.5.0) - 2026-02-26
+
+### Other
+
+- Pushdown physical filters to `SQLExecutor` ([#160](https://github.com/datafusion-contrib/datafusion-federation/pull/160))
+
 ## [0.4.14](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.13...v0.4.14) - 2026-01-14
 
 ### Other
