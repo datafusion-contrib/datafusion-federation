@@ -287,9 +287,12 @@ impl DisplayAs for VirtualExecutionPlan {
         if let Some(ctx) = self.executor.compute_context() {
             write!(f, " compute_context={ctx}")?;
         };
-        let mut plan = self.plan.clone();
+        let mut plan = match RewriteTableScanAnalyzer::rewrite(self.plan.clone()) {
+            Ok(plan) => plan,
+            Err(_) => self.plan.clone(),
+        };
         if let Ok(statement) = self.plan_to_statement(&plan) {
-            write!(f, " initial_sql={statement}")?;
+            write!(f, " base_sql={statement}")?;
         }
 
         let (logical_optimizers, ast_analyzers) = match gather_analyzers(&plan) {
