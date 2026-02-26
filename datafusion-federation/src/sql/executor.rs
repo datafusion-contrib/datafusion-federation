@@ -5,7 +5,7 @@ use datafusion::{
     common::Statistics,
     error::Result,
     logical_expr::LogicalPlan,
-    physical_plan::{metrics::MetricsSet, SendableRecordBatchStream},
+    physical_plan::{metrics::MetricsSet, PhysicalExpr, SendableRecordBatchStream},
     sql::{sqlparser::ast, unparser::dialect::Dialect},
 };
 use std::sync::Arc;
@@ -41,8 +41,18 @@ pub trait SQLExecutor: Sync + Send {
         None
     }
 
-    /// Execute a SQL query
-    fn execute(&self, query: &str, schema: SchemaRef) -> Result<SendableRecordBatchStream>;
+    /// Execute a SQL query.
+    ///
+    /// `filters` contain physical expressions generated at runtime, like
+    /// `DynamicFilterPhysicalExpr`. Since the concrete expression values only become available when
+    /// the `SendableRecordBatchStream` is executed, they must be manually added to the SQL query,
+    /// if necessary. However, they can be safely ignored.
+    fn execute(
+        &self,
+        query: &str,
+        schema: SchemaRef,
+        filters: &[Arc<dyn PhysicalExpr>],
+    ) -> Result<SendableRecordBatchStream>;
 
     /// Returns statistics for this `SQLExecutor` node. If statistics are not available, it should
     /// return [`Statistics::new_unknown`] (the default), not an error. See the `ExecutionPlan`
