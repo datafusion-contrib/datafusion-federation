@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use super::ast_analyzer;
 use super::executor::LogicalOptimizer;
+use super::executor::SqlQueryRewriter;
 use super::AstAnalyzer;
 use super::RemoteTableRef;
 
@@ -35,6 +36,11 @@ pub trait SQLTable: std::fmt::Debug + Send + Sync {
     }
     /// Returns an AST analyzer specific to this table, will be used to modify the AST before execution
     fn ast_analyzer(&self) -> Option<AstAnalyzer> {
+        None
+    }
+    /// Returns a SQL query rewriter specific to this table.
+    /// This hook is applied after AST rewrites and can directly alter the final SQL string.
+    fn sql_query_rewriter(&self) -> Option<SqlQueryRewriter> {
         None
     }
 }
