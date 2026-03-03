@@ -97,6 +97,7 @@ impl VisitorMut for TableArgReplace {
                 *args = Some(arg.clone());
                 if alias.is_none() {
                     *alias = Some(TableAlias {
+                        explicit: true,
                         name: Ident::new(table.table()),
                         columns: vec![],
                     })
