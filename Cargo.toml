@@ -11,10 +11,12 @@ readme = "README.md"
 repository = "https://github.com/datafusion-contrib/datafusion-federation"
 
 [workspace.dependencies]
-arrow-json = "57.2"
+arrow-json = "58.0"
 async-stream = "0.3"
 async-trait = "0.1"
-datafusion = "52.0"
+# TODO
+#datafusion = "52.0"
+datafusion = { git = "https://github.com/apache/datafusion", branch = "branch-53" }
 datafusion-federation = { path = "./datafusion-federation", version = "0.5.0" }
 futures = "0.3"
 tokio = { version = "1.41", features = ["full"] }

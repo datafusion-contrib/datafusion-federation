@@ -27,7 +27,7 @@ mod struct_cast;
 pub struct SchemaCastScanExec {
     input: Arc<dyn ExecutionPlan>,
     schema: SchemaRef,
-    properties: PlanProperties,
+    properties: Arc<PlanProperties>,
     metrics_set: ExecutionPlanMetricsSet,
 }
 
@@ -36,12 +36,12 @@ impl SchemaCastScanExec {
         let eq_properties = input.equivalence_properties().clone();
         let emission_type = input.pipeline_behavior();
         let boundedness = input.boundedness();
-        let properties = PlanProperties::new(
+        let properties = Arc::new(PlanProperties::new(
             eq_properties,
             input.output_partitioning().clone(),
             emission_type,
             boundedness,
-        );
+        ));
         Self {
             input,
             schema,
@@ -66,7 +66,7 @@ impl ExecutionPlan for SchemaCastScanExec {
         self
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.properties
     }
 

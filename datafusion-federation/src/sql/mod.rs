@@ -164,7 +164,7 @@ impl FederationPlanner for SQLFederationPlanner {
 pub struct VirtualExecutionPlan {
     plan: LogicalPlan,
     executor: Arc<dyn SQLExecutor>,
-    props: PlanProperties,
+    props: Arc<PlanProperties>,
     statistics: Statistics,
     filters: Vec<Arc<dyn PhysicalExpr>>,
 }
@@ -172,12 +172,12 @@ pub struct VirtualExecutionPlan {
 impl VirtualExecutionPlan {
     pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>, statistics: Statistics) -> Self {
         let schema: Schema = plan.schema().as_arrow().clone();
-        let props = PlanProperties::new(
+        let props = Arc::new(PlanProperties::new(
             EquivalenceProperties::new(Arc::new(schema)),
             Partitioning::UnknownPartitioning(1),
             EmissionType::Incremental,
             Boundedness::Bounded,
-        );
+        ));
         Self {
             plan,
             executor,
@@ -371,7 +371,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
             .execute(&self.final_sql()?, self.schema(), &self.filters)
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.props
     }
 
