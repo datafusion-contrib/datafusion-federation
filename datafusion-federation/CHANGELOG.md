@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.0...v0.5.1) - 2026-03-04
+
+### Added
+
+- *(sql)* add SQL query rewriter hook to SQLTable ([#163](https://github.com/datafusion-contrib/datafusion-federation/pull/163))
+
+### Fixed
+
+- *(sql)* apply table-scan rewrite before EXPLAIN display ([#161](https://github.com/datafusion-contrib/datafusion-federation/pull/161))
+
 ## [0.5.0](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.4.14...v0.5.0) - 2026-02-26
 
 ### Other
