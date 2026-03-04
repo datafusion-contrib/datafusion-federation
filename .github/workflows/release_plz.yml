@@ -22,8 +22,9 @@ jobs:
           fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: Install dependencies 
-        run: sudo apt install -y protobuf-compiler libprotobuf-dev
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run release-plz
         uses: MarcoIeni/release-plz-action@v0.5
         with:
