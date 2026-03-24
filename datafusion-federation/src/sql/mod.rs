@@ -33,7 +33,7 @@ use datafusion::{
     sql::{sqlparser::ast::Statement, unparser::Unparser},
 };
 
-pub use executor::{AstAnalyzer, LogicalOptimizer, SQLExecutor, SQLExecutorRef};
+pub use executor::{AstAnalyzer, LogicalOptimizer, SQLExecutor, SQLExecutorRef, SqlQueryRewriter};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider};
 pub use table::{RemoteTable, SQLTable, SQLTableSource};
 pub use table_reference::RemoteTableRef;
@@ -207,12 +207,12 @@ impl VirtualExecutionPlan {
     fn final_sql(&self) -> Result<String> {
         let plan = self.plan.clone();
         let plan = RewriteTableScanAnalyzer::rewrite(plan)?;
-        let (logical_optimizers, ast_analyzers) = gather_analyzers(&plan)?;
+        let (logical_optimizers, ast_analyzers, sql_query_rewriters) = gather_analyzers(&plan)?;
         let plan = apply_logical_optimizers(plan, logical_optimizers)?;
         let ast = self.plan_to_statement(&plan)?;
         let ast = self.rewrite_with_executor_ast_analyzer(ast)?;
         let ast = apply_ast_analyzers(ast, ast_analyzers)?;
-        Ok(ast.to_string())
+        apply_sql_query_rewriters(ast.to_string(), sql_query_rewriters)
     }
 
     fn rewrite_with_executor_ast_analyzer(
@@ -231,9 +231,16 @@ impl VirtualExecutionPlan {
     }
 }
 
-fn gather_analyzers(plan: &LogicalPlan) -> Result<(Vec<LogicalOptimizer>, Vec<AstAnalyzer>)> {
+fn gather_analyzers(
+    plan: &LogicalPlan,
+) -> Result<(
+    Vec<LogicalOptimizer>,
+    Vec<AstAnalyzer>,
+    Vec<SqlQueryRewriter>,
+)> {
     let mut logical_optimizers = vec![];
     let mut ast_analyzers = vec![];
+    let mut sql_query_rewriters = vec![];
 
     plan.apply(|node| {
         if let LogicalPlan::TableScan(table) = node {
@@ -247,12 +254,15 @@ fn gather_analyzers(plan: &LogicalPlan) -> Result<(Vec<LogicalOptimizer>, Vec<As
                 if let Some(analyzer) = source.table.ast_analyzer() {
                     ast_analyzers.push(analyzer);
                 }
+                if let Some(rewriter) = source.table.sql_query_rewriter() {
+                    sql_query_rewriters.push(rewriter);
+                }
             }
         }
         Ok(datafusion::common::tree_node::TreeNodeRecursion::Continue)
     })?;
 
-    Ok((logical_optimizers, ast_analyzers))
+    Ok((logical_optimizers, ast_analyzers, sql_query_rewriters))
 }
 
 fn apply_logical_optimizers(
@@ -280,6 +290,16 @@ fn apply_ast_analyzers(mut statement: Statement, analyzers: Vec<AstAnalyzer>) ->
     Ok(statement)
 }
 
+fn apply_sql_query_rewriters(
+    mut query: String,
+    rewriters: Vec<SqlQueryRewriter>,
+) -> Result<String> {
+    for mut rewriter in rewriters {
+        query = rewriter(query)?;
+    }
+    Ok(query)
+}
+
 impl DisplayAs for VirtualExecutionPlan {
     fn fmt_as(&self, _t: DisplayFormatType, f: &mut fmt::Formatter) -> std::fmt::Result {
         write!(f, "VirtualExecutionPlan")?;
@@ -295,7 +315,8 @@ impl DisplayAs for VirtualExecutionPlan {
             write!(f, " base_sql={statement}")?;
         }
 
-        let (logical_optimizers, ast_analyzers) = match gather_analyzers(&plan) {
+        let (logical_optimizers, ast_analyzers, sql_query_rewriters) = match gather_analyzers(&plan)
+        {
             Ok(analyzers) => analyzers,
             Err(_) => return Ok(()),
         };
@@ -332,6 +353,15 @@ impl DisplayAs for VirtualExecutionPlan {
         };
         if old_statement != statement {
             write!(f, " rewritten_ast_analyzer={statement}")?;
+        }
+
+        let sql = statement.to_string();
+        let rewritten_sql = match apply_sql_query_rewriters(sql.clone(), sql_query_rewriters) {
+            Ok(sql) => sql,
+            _ => return Ok(()),
+        };
+        if sql != rewritten_sql {
+            write!(f, " rewritten_sql_query={rewritten_sql}")?;
         }
 
         Ok(())
@@ -416,11 +446,14 @@ impl ExecutionPlan for VirtualExecutionPlan {
 
 #[cfg(test)]
 mod tests {
-
+    use std::any::Any;
     use std::collections::HashSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
-    use crate::sql::{RemoteTableRef, SQLExecutor, SQLFederationProvider, SQLTableSource};
+    use crate::sql::{
+        RemoteTableRef, SQLExecutor, SQLFederationProvider, SQLTable, SQLTableSource,
+    };
     use crate::FederatedTableProviderAdaptor;
     use async_trait::async_trait;
     use datafusion::arrow::datatypes::{Schema, SchemaRef};
@@ -428,6 +461,7 @@ mod tests {
     use datafusion::execution::SendableRecordBatchStream;
     use datafusion::sql::unparser::dialect::Dialect;
     use datafusion::sql::unparser::{self};
+    use datafusion::sql::TableReference;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
         datasource::TableProvider,
@@ -485,6 +519,60 @@ mod tests {
         let provider = Arc::new(SQLFederationProvider::new(Arc::new(executor)));
         let table_source = Arc::new(SQLTableSource { provider, table });
         Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+
+    fn get_test_table_provider_with_table(
+        table: Arc<dyn SQLTable>,
+        executor: TestExecutor,
+    ) -> Arc<dyn TableProvider> {
+        let provider = Arc::new(SQLFederationProvider::new(Arc::new(executor)));
+        let table_source = Arc::new(SQLTableSource::new_with_table(provider, table));
+        Arc::new(FederatedTableProviderAdaptor::new(table_source))
+    }
+
+    #[derive(Debug)]
+    struct SqlRewriteTable {
+        table: RemoteTable,
+        rewrite_calls: Arc<AtomicUsize>,
+        suffix: String,
+    }
+
+    impl SqlRewriteTable {
+        fn new(
+            table_ref: RemoteTableRef,
+            schema: SchemaRef,
+            rewrite_calls: Arc<AtomicUsize>,
+            suffix: impl Into<String>,
+        ) -> Self {
+            Self {
+                table: RemoteTable::new(table_ref, schema),
+                rewrite_calls,
+                suffix: suffix.into(),
+            }
+        }
+    }
+
+    impl SQLTable for SqlRewriteTable {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn table_reference(&self) -> TableReference {
+            self.table.table_reference().clone()
+        }
+
+        fn schema(&self) -> SchemaRef {
+            Arc::clone(self.table.schema())
+        }
+
+        fn sql_query_rewriter(&self) -> Option<SqlQueryRewriter> {
+            let rewrite_calls = Arc::clone(&self.rewrite_calls);
+            let suffix = self.suffix.clone();
+            Some(Box::new(move |sql| {
+                rewrite_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(format!("{sql} {suffix}"))
+            }))
+        }
     }
 
     #[tokio::test]
@@ -674,6 +762,57 @@ mod tests {
             HashSet::<&str>::from_iter(final_queries.iter().map(|x| x.as_str())),
             HashSet::from_iter(expected)
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn sql_query_rewriter_hook_invoked_and_rewrites_sql() -> Result<(), DataFusionError> {
+        let executor = TestExecutor {
+            compute_context: "rewrite".into(),
+        };
+        let rewrite_calls = Arc::new(AtomicUsize::new(0));
+        let table_ref = "table_with_rewriter".to_string();
+        let table = Arc::new(SqlRewriteTable::new(
+            table_ref.clone().try_into().unwrap(),
+            Arc::new(Schema::new(vec![
+                Field::new("a", DataType::Int64, false),
+                Field::new("b", DataType::Utf8, false),
+                Field::new("c", DataType::Date32, false),
+            ])),
+            Arc::clone(&rewrite_calls),
+            "/* rewritten by sql_query_rewriter */",
+        ));
+        let table_provider = get_test_table_provider_with_table(table, executor);
+
+        let state = crate::default_session_state();
+        let ctx = SessionContext::new_with_state(state);
+        ctx.register_table(table_ref.clone(), table_provider)
+            .unwrap();
+
+        let query = format!("SELECT * FROM {table_ref}");
+        let df = ctx.sql(&query).await?;
+        let logical_plan = df.into_optimized_plan()?;
+        let physical_plan = ctx.state().create_physical_plan(&logical_plan).await?;
+
+        let mut final_queries = vec![];
+        let _ = physical_plan.apply(|node| {
+            if node.name() == "sql_federation_exec" {
+                let node = node
+                    .as_any()
+                    .downcast_ref::<VirtualExecutionPlan>()
+                    .unwrap();
+                final_queries.push(node.final_sql()?);
+            }
+            Ok(TreeNodeRecursion::Continue)
+        });
+
+        let [final_query] = final_queries.as_slice() else {
+            panic!("expected a single federated SQL query");
+        };
+
+        assert!(final_query.ends_with("/* rewritten by sql_query_rewriter */"));
+        assert_eq!(rewrite_calls.load(Ordering::SeqCst), 1);
 
         Ok(())
     }

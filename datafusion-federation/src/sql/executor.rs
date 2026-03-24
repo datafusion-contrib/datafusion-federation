@@ -13,6 +13,7 @@ use std::sync::Arc;
 pub type SQLExecutorRef = Arc<dyn SQLExecutor>;
 pub type AstAnalyzer = Box<dyn FnMut(ast::Statement) -> Result<ast::Statement>>;
 pub type LogicalOptimizer = Box<dyn FnMut(LogicalPlan) -> Result<LogicalPlan>>;
+pub type SqlQueryRewriter = Box<dyn FnMut(String) -> Result<String>>;
 
 #[async_trait]
 pub trait SQLExecutor: Sync + Send {
