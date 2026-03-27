@@ -191,14 +191,22 @@ impl FederationOptimizerRule {
                 return Ok((None, ScanResult::Distinct(provider)));
             }
 
-            let Some(optimizer) = provider.optimizer() else {
-                // No optimizer provided
-                return Ok((None, ScanResult::None));
-            };
+            // Analyze plans (EXPLAIN ANALYZE) cannot be converted to SQL by
+            // the Unparser, so they must not be federated as a whole. Only the
+            // inner query should be federated; DataFusion's AnalyzeExec will
+            // handle executing it and collecting metrics.
+            if matches!(plan, LogicalPlan::Analyze(_)) {
+                // Fall through to federate children instead.
+            } else {
+                let Some(optimizer) = provider.optimizer() else {
+                    // No optimizer provided
+                    return Ok((None, ScanResult::None));
+                };
 
-            // If this is the root plan node; federate the entire plan
-            let optimized = optimizer.optimize(plan.clone(), _config, |_, _| {})?;
-            return Ok((Some(optimized), ScanResult::None));
+                // If this is the root plan node; federate the entire plan
+                let optimized = optimizer.optimize(plan.clone(), _config, |_, _| {})?;
+                return Ok((Some(optimized), ScanResult::None));
+            }
         }
 
         // The plan is ambiguous; any input that is not yet optimized and has a
