@@ -5,7 +5,7 @@ use datafusion::{
     logical_expr::{
         expr::{
             AggregateFunction, AggregateFunctionParams, Alias, Exists, InList, InSubquery,
-            PlannedReplaceSelectItem, ScalarFunction, Sort, Unnest, WildcardOptions,
+            PlannedReplaceSelectItem, ScalarFunction, SetComparison, Sort, Unnest, WildcardOptions,
             WindowFunction, WindowFunctionParams,
         },
         Between, BinaryExpr, Case, Cast, Expr, GroupingSet, Like, Limit, LogicalPlan, Subquery,
@@ -563,6 +563,27 @@ fn rewrite_table_scans_in_expr(
             Ok(Expr::Unnest(Unnest::new(expr)))
         }
         Expr::ScalarVariable(_, _) | Expr::Literal(_, _) | Expr::Placeholder(_) => Ok(expr),
+        Expr::SetComparison(sc) => {
+            let expr = rewrite_table_scans_in_expr(*sc.expr, known_rewrites)?;
+            let subquery_plan = rewrite_table_scans(&sc.subquery.subquery, known_rewrites)?;
+            let outer_ref_columns = sc
+                .subquery
+                .outer_ref_columns
+                .into_iter()
+                .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
+                .collect::<Result<Vec<Expr>>>()?;
+            let subquery = Subquery {
+                subquery: Arc::new(subquery_plan),
+                outer_ref_columns,
+                spans: Spans::new(),
+            };
+            Ok(Expr::SetComparison(SetComparison::new(
+                Box::new(expr),
+                subquery,
+                sc.op,
+                sc.quantifier,
+            )))
+        }
     }
 }
 

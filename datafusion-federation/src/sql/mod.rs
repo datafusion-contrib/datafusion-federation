@@ -164,7 +164,7 @@ impl FederationPlanner for SQLFederationPlanner {
 pub struct VirtualExecutionPlan {
     plan: LogicalPlan,
     executor: Arc<dyn SQLExecutor>,
-    props: PlanProperties,
+    props: Arc<PlanProperties>,
     statistics: Statistics,
     filters: Vec<Arc<dyn PhysicalExpr>>,
 }
@@ -172,12 +172,12 @@ pub struct VirtualExecutionPlan {
 impl VirtualExecutionPlan {
     pub fn new(plan: LogicalPlan, executor: Arc<dyn SQLExecutor>, statistics: Statistics) -> Self {
         let schema: Schema = plan.schema().as_arrow().clone();
-        let props = PlanProperties::new(
+        let props = Arc::new(PlanProperties::new(
             EquivalenceProperties::new(Arc::new(schema)),
             Partitioning::UnknownPartitioning(1),
             EmissionType::Incremental,
             Boundedness::Bounded,
-        );
+        ));
         Self {
             plan,
             executor,
@@ -401,7 +401,7 @@ impl ExecutionPlan for VirtualExecutionPlan {
             .execute(&self.final_sql()?, self.schema(), &self.filters)
     }
 
-    fn properties(&self) -> &PlanProperties {
+    fn properties(&self) -> &Arc<PlanProperties> {
         &self.props
     }
 
@@ -762,6 +762,57 @@ mod tests {
             HashSet::<&str>::from_iter(final_queries.iter().map(|x| x.as_str())),
             HashSet::from_iter(expected)
         );
+
+        Ok(())
+    }
+
+    /// EXPLAIN ANALYZE must not federate the Analyze wrapper — only the inner
+    /// query should be federated. Otherwise the SQL Unparser fails because it
+    /// cannot convert Analyze to SQL.
+    #[tokio::test]
+    async fn explain_analyze_not_federated() -> Result<(), DataFusionError> {
+        let executor = TestExecutor {
+            compute_context: "a".into(),
+        };
+
+        let table_ref = "test_table".to_string();
+        let table = get_test_table_provider(table_ref.clone(), executor);
+
+        let state = crate::default_session_state();
+        let ctx = SessionContext::new_with_state(state);
+        ctx.register_table(table_ref, table).unwrap();
+
+        let plan = ctx
+            .sql("EXPLAIN ANALYZE SELECT * FROM test_table")
+            .await?
+            .into_optimized_plan()?;
+
+        // The top-level node must be Analyze, not Federated.
+        assert!(
+            matches!(plan, LogicalPlan::Analyze(_)),
+            "Expected Analyze at root, got: {}",
+            plan.display_indent()
+        );
+
+        // The inner plan should contain a Federated extension node.
+        let mut found_federated = false;
+        plan.apply(|node| {
+            if let LogicalPlan::Extension(ext) = node {
+                if ext.node.name() == "Federated" {
+                    found_federated = true;
+                    return Ok(TreeNodeRecursion::Stop);
+                }
+            }
+            Ok(TreeNodeRecursion::Continue)
+        })?;
+        assert!(
+            found_federated,
+            "Expected a Federated node inside the Analyze plan"
+        );
+
+        // Physical planning should succeed (this is where it used to fail).
+        let physical_plan = ctx.state().create_physical_plan(&plan).await?;
+        assert_eq!(physical_plan.name(), "AnalyzeExec");
 
         Ok(())
     }
