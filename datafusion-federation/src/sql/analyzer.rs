@@ -1,12 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, sync::Arc};
 
 use datafusion::{
     common::{Column, Spans},
     logical_expr::{
         expr::{
-            AggregateFunction, AggregateFunctionParams, Alias, Exists, InList, InSubquery,
-            PlannedReplaceSelectItem, ScalarFunction, SetComparison, Sort, Unnest, WildcardOptions,
-            WindowFunction, WindowFunctionParams,
+            AggregateFunction, AggregateFunctionParams, Alias, Exists, HigherOrderFunction, InList,
+            InSubquery, Lambda, PlannedReplaceSelectItem, ScalarFunction, SetComparison, Sort,
+            Unnest, WildcardOptions, WindowFunction, WindowFunctionParams,
         },
         Between, BinaryExpr, Case, Cast, Expr, GroupingSet, Like, Limit, LogicalPlan, Subquery,
         TryCast,
@@ -46,7 +46,7 @@ fn rewrite_table_scans(
                 return Ok(plan.clone());
             };
 
-            match federated_source.as_any().downcast_ref::<SQLTableSource>() {
+            match (federated_source.as_ref() as &dyn Any).downcast_ref::<SQLTableSource>() {
                 Some(sql_table_source) => {
                     let remote_table_name = sql_table_source.table_reference();
                     known_rewrites.insert(original_table_name, remote_table_name.clone());
@@ -351,13 +351,13 @@ fn rewrite_table_scans_in_expr(
         }
         Expr::Cast(cast) => {
             let expr = rewrite_table_scans_in_expr(*cast.expr, known_rewrites)?;
-            Ok(Expr::Cast(Cast::new(Box::new(expr), cast.data_type)))
+            Ok(Expr::Cast(Cast::new_from_field(Box::new(expr), cast.field)))
         }
         Expr::TryCast(try_cast) => {
             let expr = rewrite_table_scans_in_expr(*try_cast.expr, known_rewrites)?;
-            Ok(Expr::TryCast(TryCast::new(
+            Ok(Expr::TryCast(TryCast::new_from_field(
                 Box::new(expr),
-                try_cast.data_type,
+                try_cast.field,
             )))
         }
         Expr::ScalarFunction(sf) => {
@@ -562,7 +562,10 @@ fn rewrite_table_scans_in_expr(
             let expr = rewrite_table_scans_in_expr(*unnest.expr, known_rewrites)?;
             Ok(Expr::Unnest(Unnest::new(expr)))
         }
-        Expr::ScalarVariable(_, _) | Expr::Literal(_, _) | Expr::Placeholder(_) => Ok(expr),
+        Expr::ScalarVariable(_, _)
+        | Expr::Literal(_, _)
+        | Expr::Placeholder(_)
+        | Expr::LambdaVariable(_) => Ok(expr),
         Expr::SetComparison(sc) => {
             let expr = rewrite_table_scans_in_expr(*sc.expr, known_rewrites)?;
             let subquery_plan = rewrite_table_scans(&sc.subquery.subquery, known_rewrites)?;
@@ -583,6 +586,20 @@ fn rewrite_table_scans_in_expr(
                 sc.op,
                 sc.quantifier,
             )))
+        }
+        Expr::HigherOrderFunction(hof) => {
+            let args = hof
+                .args
+                .into_iter()
+                .map(|e| rewrite_table_scans_in_expr(e, known_rewrites))
+                .collect::<Result<Vec<Expr>>>()?;
+            Ok(Expr::HigherOrderFunction(HigherOrderFunction::new(
+                hof.func, args,
+            )))
+        }
+        Expr::Lambda(lambda) => {
+            let body = rewrite_table_scans_in_expr(*lambda.body, known_rewrites)?;
+            Ok(Expr::Lambda(Lambda::new(lambda.params, body)))
         }
     }
 }

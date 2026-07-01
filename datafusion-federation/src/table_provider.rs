@@ -1,4 +1,4 @@
-use std::{any::Any, borrow::Cow, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use async_trait::async_trait;
 use datafusion::{
@@ -47,9 +47,6 @@ impl FederatedTableProviderAdaptor {
 
 #[async_trait]
 impl TableProvider for FederatedTableProviderAdaptor {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
     fn schema(&self) -> SchemaRef {
         if let Some(table_provider) = &self.table_provider {
             return table_provider.schema();

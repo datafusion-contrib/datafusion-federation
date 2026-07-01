@@ -1,5 +1,6 @@
 mod scan_result;
 
+use std::any::Any;
 use std::sync::Arc;
 
 use datafusion::{
@@ -364,9 +365,8 @@ pub fn get_table_source(
     let source = source_as_provider(source)?;
 
     // Get FederatedTableProviderAdaptor
-    let Some(wrapper) = source
-        .as_any()
-        .downcast_ref::<FederatedTableProviderAdaptor>()
+    let Some(wrapper) =
+        (source.as_ref() as &dyn Any).downcast_ref::<FederatedTableProviderAdaptor>()
     else {
         return Ok(None);
     };

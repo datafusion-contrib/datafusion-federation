@@ -247,7 +247,7 @@ fn gather_analyzers(
             let provider = get_table_source(&table.source)
                 .expect("caller is virtual exec so this is valid")
                 .expect("caller is virtual exec so this is valid");
-            if let Some(source) = provider.as_any().downcast_ref::<SQLTableSource>() {
+            if let Some(source) = (provider.as_ref() as &dyn Any).downcast_ref::<SQLTableSource>() {
                 if let Some(analyzer) = source.table.logical_optimizer() {
                     logical_optimizers.push(analyzer);
                 }
@@ -373,10 +373,6 @@ impl ExecutionPlan for VirtualExecutionPlan {
         "sql_federation_exec"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.schema()
     }
@@ -405,8 +401,8 @@ impl ExecutionPlan for VirtualExecutionPlan {
         &self.props
     }
 
-    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Statistics> {
-        Ok(self.statistics.clone())
+    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Arc<Statistics>> {
+        Ok(Arc::new(self.statistics.clone()))
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
@@ -654,8 +650,7 @@ mod tests {
 
         let _ = physical_plan.apply(|node| {
             if node.name() == "sql_federation_exec" {
-                let node = node
-                    .as_any()
+                let node = (node.as_ref() as &dyn Any)
                     .downcast_ref::<VirtualExecutionPlan>()
                     .unwrap();
 
@@ -744,8 +739,7 @@ mod tests {
 
         let _ = physical_plan.apply(|node| {
             if node.name() == "sql_federation_exec" {
-                let node = node
-                    .as_any()
+                let node = (node.as_ref() as &dyn Any)
                     .downcast_ref::<VirtualExecutionPlan>()
                     .unwrap();
 
@@ -849,8 +843,7 @@ mod tests {
         let mut final_queries = vec![];
         let _ = physical_plan.apply(|node| {
             if node.name() == "sql_federation_exec" {
-                let node = node
-                    .as_any()
+                let node = (node.as_ref() as &dyn Any)
                     .downcast_ref::<VirtualExecutionPlan>()
                     .unwrap();
                 final_queries.push(node.final_sql()?);

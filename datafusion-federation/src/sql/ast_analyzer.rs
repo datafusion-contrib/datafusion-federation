@@ -100,6 +100,7 @@ impl VisitorMut for TableArgReplace {
                         explicit: true,
                         name: Ident::new(table.table()),
                         columns: vec![],
+                        at: None,
                     })
                 }
             }
