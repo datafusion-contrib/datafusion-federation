@@ -12,7 +12,6 @@ use datafusion::physical_plan::{
     PlanProperties,
 };
 use futures::StreamExt;
-use std::any::Any;
 use std::clone::Clone;
 use std::fmt;
 use std::sync::Arc;
@@ -60,10 +59,6 @@ impl DisplayAs for SchemaCastScanExec {
 impl ExecutionPlan for SchemaCastScanExec {
     fn name(&self) -> &str {
         "SchemaCastScanExec"
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 
     fn properties(&self) -> &Arc<PlanProperties> {
@@ -127,7 +122,7 @@ impl ExecutionPlan for SchemaCastScanExec {
         )))
     }
 
-    fn partition_statistics(&self, partition: Option<usize>) -> Result<Statistics> {
+    fn partition_statistics(&self, partition: Option<usize>) -> Result<Arc<Statistics>> {
         self.input.partition_statistics(partition)
     }
 
