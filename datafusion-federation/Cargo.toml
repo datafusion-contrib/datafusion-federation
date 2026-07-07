@@ -41,3 +41,8 @@ required-features = ["sql"]
 name = "df-csv-advanced"
 path = "examples/df-csv-advanced.rs"
 required-features = ["sql"]
+
+[[example]]
+name = "df-unnest"
+path = "examples/df-unnest.rs"
+required-features = ["sql"]
