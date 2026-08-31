@@ -11,24 +11,26 @@ use analyzer::RewriteTableScanAnalyzer;
 use async_trait::async_trait;
 use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
+    catalog::Session,
     common::{
-        tree_node::{Transformed, TreeNode},
+        tree_node::{Transformed, TreeNode, TreeNodeRecursion},
         Statistics,
     },
     config::ConfigOptions,
     error::{DataFusionError, Result},
-    execution::{context::SessionState, TaskContext},
+    execution::TaskContext,
     logical_expr::{Extension, LogicalPlan},
     optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
+        apply_expression_roots,
         execution_plan::{Boundedness, EmissionType},
         filter_pushdown::{
             ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation, PushedDown,
         },
         metrics::MetricsSet,
         DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, PlanProperties,
-        SendableRecordBatchStream,
+        SendableRecordBatchStream, StatisticsArgs,
     },
     sql::{sqlparser::ast::Statement, unparser::Unparser},
 };
@@ -145,7 +147,7 @@ impl FederationPlanner for SQLFederationPlanner {
     async fn plan_federation(
         &self,
         node: &FederatedPlanNode,
-        _session_state: &SessionState,
+        _session_state: &dyn Session,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let schema = Arc::new(node.plan().schema().as_arrow().clone());
         let plan = node.plan().clone();
@@ -401,7 +403,11 @@ impl ExecutionPlan for VirtualExecutionPlan {
         &self.props
     }
 
-    fn partition_statistics(&self, _partition: Option<usize>) -> Result<Arc<Statistics>> {
+    fn statistics_from_inputs(
+        &self,
+        _input_stats: &[Arc<Statistics>],
+        _args: &StatisticsArgs,
+    ) -> Result<Arc<Statistics>> {
         Ok(Arc::new(self.statistics.clone()))
     }
 
@@ -438,6 +444,13 @@ impl ExecutionPlan for VirtualExecutionPlan {
             updated_node: Some(Arc::new(node)),
         })
     }
+
+    fn apply_expressions(
+        &self,
+        f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> Result<TreeNodeRecursion>,
+    ) -> Result<TreeNodeRecursion> {
+        apply_expression_roots(&self.filters, f)
+    }
 }
 
 #[cfg(test)]
@@ -454,10 +467,10 @@ mod tests {
     use async_trait::async_trait;
     use datafusion::arrow::datatypes::{Schema, SchemaRef};
     use datafusion::common::tree_node::TreeNodeRecursion;
+    use datafusion::common::TableReference;
     use datafusion::execution::SendableRecordBatchStream;
     use datafusion::sql::unparser::dialect::Dialect;
     use datafusion::sql::unparser::{self};
-    use datafusion::sql::TableReference;
     use datafusion::{
         arrow::datatypes::{DataType, Field},
         datasource::TableProvider,

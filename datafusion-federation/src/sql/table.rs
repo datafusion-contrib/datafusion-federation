@@ -2,10 +2,10 @@ use crate::sql::SQLFederationProvider;
 use crate::FederatedTableSource;
 use crate::FederationProvider;
 use datafusion::arrow::datatypes::SchemaRef;
+use datafusion::common::TableReference;
 use datafusion::error::Result;
 use datafusion::logical_expr::TableSource;
 use datafusion::logical_expr::TableType;
-use datafusion::sql::TableReference;
 use std::any::Any;
 use std::sync::Arc;
 
@@ -22,7 +22,7 @@ use super::RemoteTableRef;
 pub trait SQLTable: std::fmt::Debug + Send + Sync {
     /// Returns a reference as a trait object.
     fn as_any(&self) -> &dyn Any;
-    /// Provides the [`TableReference`](`datafusion::sql::TableReference`) used to identify the table in SQL queries.
+    /// Provides the [`TableReference`](`datafusion::common::TableReference`) used to identify the table in SQL queries.
     /// This TableReference is used for registering the table with the [`SQLSchemaProvider`](`super::SQLSchemaProvider`).
     /// If the table provider is registered in the Datafusion context under a different name,
     /// the logical plan will be rewritten to use this table reference during execution.
@@ -57,7 +57,7 @@ impl RemoteTable {
     ///
     /// Examples:
     /// ```ignore
-    /// use datafusion::sql::TableReference;
+    /// use datafusion::common::TableReference;
     ///
     /// RemoteTable::new("myschema.table".try_into()?, schema);
     /// RemoteTable::new(r#"myschema."Table""#.try_into()?, schema);

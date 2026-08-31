@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
 use datafusion::{
+    common::TableReference,
     error::DataFusionError,
-    sql::{
-        sqlparser::{
-            self,
-            ast::{FunctionArg, ObjectNamePart},
-            dialect::{Dialect, GenericDialect},
-            tokenizer::Token,
-        },
-        TableReference,
+    sql::sqlparser::{
+        self,
+        ast::{FunctionArg, ObjectNamePart},
+        dialect::{Dialect, GenericDialect},
+        tokenizer::Token,
     },
 };
 

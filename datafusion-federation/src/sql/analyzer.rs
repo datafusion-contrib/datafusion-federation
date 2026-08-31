@@ -1,7 +1,7 @@
 use std::{any::Any, collections::HashMap, sync::Arc};
 
 use datafusion::{
-    common::{Column, Spans},
+    common::{Column, Spans, TableReference},
     logical_expr::{
         expr::{
             AggregateFunction, AggregateFunctionParams, Alias, Exists, HigherOrderFunction, InList,
@@ -11,7 +11,6 @@ use datafusion::{
         Between, BinaryExpr, Case, Cast, Expr, GroupingSet, Like, Limit, LogicalPlan, Subquery,
         TryCast,
     },
-    sql::TableReference,
 };
 
 use crate::get_table_source;
