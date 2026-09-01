@@ -153,6 +153,7 @@ impl ExecutionPlan for SchemaCastScanExec {
         &self,
         _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> Result<TreeNodeRecursion>,
     ) -> Result<TreeNodeRecursion> {
+        // We have no expressions, so per the docs for `apply_expressions`, we should return `Continue`
         Ok(TreeNodeRecursion::Continue)
     }
 }
