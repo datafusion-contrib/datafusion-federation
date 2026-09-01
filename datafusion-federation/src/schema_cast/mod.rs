@@ -132,6 +132,7 @@ impl ExecutionPlan for SchemaCastScanExec {
         input_stats: &[Arc<Statistics>],
         _args: &StatisticsArgs,
     ) -> Result<Arc<Statistics>> {
+        // We always have a single child input
         Ok(Arc::clone(&input_stats[0]))
     }
 
