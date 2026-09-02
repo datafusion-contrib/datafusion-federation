@@ -132,8 +132,14 @@ impl ExecutionPlan for SchemaCastScanExec {
         input_stats: &[Arc<Statistics>],
         _args: &StatisticsArgs,
     ) -> Result<Arc<Statistics>> {
-        // We always have a single child input
-        Ok(Arc::clone(&input_stats[0]))
+        if input_stats.len() == 1 {
+            Ok(Arc::clone(&input_stats[0]))
+        } else {
+            Err(DataFusionError::Execution(format!(
+                "{} expects exactly one input",
+                self.name()
+            )))
+        }
     }
 
     fn metrics(&self) -> Option<MetricsSet> {
