@@ -7,10 +7,14 @@ use std::{
 
 use async_trait::async_trait;
 use datafusion::{
+    catalog::Session,
     common::DFSchemaRef,
     error::{DataFusionError, Result},
-    execution::context::{QueryPlanner, SessionState},
-    logical_expr::{Expr, LogicalPlan, UserDefinedLogicalNode, UserDefinedLogicalNodeCore},
+    execution::context::QueryPlanner,
+    logical_expr::{
+        physical_planning_context::PhysicalPlanningContext, Expr, LogicalPlan,
+        UserDefinedLogicalNode, UserDefinedLogicalNodeCore,
+    },
     physical_plan::ExecutionPlan,
     physical_planner::{DefaultPhysicalPlanner, ExtensionPlanner, PhysicalPlanner},
 };
@@ -86,7 +90,7 @@ impl QueryPlanner for FederatedQueryPlanner {
     async fn create_physical_plan(
         &self,
         logical_plan: &LogicalPlan,
-        session_state: &SessionState,
+        session_state: &dyn Session,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         // Get provider here?
 
@@ -105,7 +109,7 @@ pub trait FederationPlanner: Send + Sync {
     async fn plan_federation(
         &self,
         node: &FederatedPlanNode,
-        session_state: &SessionState,
+        session_state: &dyn Session,
     ) -> Result<Arc<dyn ExecutionPlan>>;
 }
 
@@ -153,7 +157,8 @@ impl ExtensionPlanner for FederatedPlanner {
         node: &dyn UserDefinedLogicalNode,
         logical_inputs: &[&LogicalPlan],
         physical_inputs: &[Arc<dyn ExecutionPlan>],
-        session_state: &SessionState,
+        session_state: &dyn Session,
+        _planning_ctx: &PhysicalPlanningContext,
     ) -> Result<Option<Arc<dyn ExecutionPlan>>> {
         let dc_node = node.as_any().downcast_ref::<FederatedPlanNode>();
         if let Some(fed_node) = dc_node {
