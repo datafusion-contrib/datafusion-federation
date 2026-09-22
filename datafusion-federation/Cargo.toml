@@ -18,7 +18,10 @@ all-features = true
 no-default-features = true
 
 [features]
-sql = []
+# The `sql` module unparses a federated sub-plan, which lives behind datafusion's own
+# `sql` feature. Declaring it here means a consumer that does not use this crate's SQL
+# federation does not compile datafusion's parser either.
+sql = ["datafusion/sql"]
 
 [dependencies]
 futures.workspace = true
