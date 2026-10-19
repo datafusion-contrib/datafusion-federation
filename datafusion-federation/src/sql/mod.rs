@@ -461,6 +461,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use super::table::RemoteTable;
+    use super::*;
     use crate::sql::{
         RemoteTableRef, SQLExecutor, SQLFederationProvider, SQLTable, SQLTableSource,
     };
@@ -471,13 +473,10 @@ mod tests {
     use datafusion::common::TableReference;
     use datafusion::execution::SendableRecordBatchStream;
     use datafusion::logical_expr::Operator;
-    use datafusion::physical_expr::{
-        expressions::{binary, col, lit},
-    };
-    use datafusion::physical_optimizer::{
-        filter_pushdown::{FilterPushdown},
-        PhysicalOptimizerRule,
-    };
+    use datafusion::physical_expr::expressions::{binary, col, lit};
+    use datafusion::physical_optimizer::{filter_pushdown::FilterPushdown, PhysicalOptimizerRule};
+    use datafusion::physical_plan::filter::FilterExec;
+    use datafusion::physical_plan::filter_pushdown::ChildFilterPushdownResult;
     use datafusion::sql::unparser::dialect::Dialect;
     use datafusion::sql::unparser::{self};
     use datafusion::{
@@ -485,10 +484,6 @@ mod tests {
         datasource::TableProvider,
         execution::context::SessionContext,
     };
-    use datafusion::physical_plan::filter::FilterExec;
-    use datafusion::physical_plan::filter_pushdown::ChildFilterPushdownResult;
-    use super::table::RemoteTable;
-    use super::*;
 
     #[derive(Debug, Clone)]
     struct TestExecutor {
