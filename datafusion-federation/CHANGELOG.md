@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.8](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.7...v0.5.8) - 2026-10-22
+
+### Fixed
+
+- Append pushed-down filters instead of overriding them ([#187](https://github.com/datafusion-contrib/datafusion-federation/pull/187))
+
 ## [0.5.7](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.6...v0.5.7) - 2026-09-22
 
 ### Other
