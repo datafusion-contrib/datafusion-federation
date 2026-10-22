@@ -25,9 +25,7 @@ use datafusion::{
     physical_plan::{
         apply_expression_roots,
         execution_plan::{Boundedness, EmissionType},
-        filter_pushdown::{
-            ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation, PushedDown,
-        },
+        filter_pushdown::{ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation},
         metrics::MetricsSet,
         DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, PlanProperties,
         SendableRecordBatchStream, StatisticsArgs,
@@ -415,34 +413,37 @@ impl ExecutionPlan for VirtualExecutionPlan {
         self.executor.metrics()
     }
 
+    /// Passes the dynamic filters pushed down at runtime (e.g. by joins and TopK) to the
+    /// [`SQLExecutor`], which may use them to narrow down the query.
+    ///
+    /// The filters are never reported as pushed down: they are not part of the SQL query, and
+    /// the executor may ignore them. Static filters (those pushed down before the
+    /// [`FilterPushdownPhase::Post`] phase, such as the predicate of a `FilterExec`) are not
+    /// taken at all, so DataFusion keeps evaluating them.
     fn handle_child_pushdown_result(
         &self,
-        _phase: FilterPushdownPhase,
+        phase: FilterPushdownPhase,
         child_pushdown_result: ChildPushdownResult,
         _config: &ConfigOptions,
     ) -> Result<FilterPushdownPropagation<Arc<dyn ExecutionPlan>>> {
-        let parent_filters: Vec<_> = child_pushdown_result
-            .clone()
-            .parent_filters
-            .into_iter()
-            .map(|f| f.filter)
-            .collect();
-
-        if parent_filters.is_empty() {
-            return Ok(FilterPushdownPropagation {
-                filters: vec![],
-                updated_node: None,
-            });
+        if phase != FilterPushdownPhase::Post || child_pushdown_result.parent_filters.is_empty() {
+            return Ok(FilterPushdownPropagation::all_unsupported(
+                child_pushdown_result,
+            ));
         }
 
-        let filters_pushed_down = vec![PushedDown::Yes; parent_filters.len()];
         let mut node = self.clone();
-        node.filters = parent_filters;
+        node.filters.extend(
+            child_pushdown_result
+                .parent_filters
+                .iter()
+                .map(|f| Arc::clone(&f.filter)),
+        );
 
-        Ok(FilterPushdownPropagation {
-            filters: filters_pushed_down,
-            updated_node: Some(Arc::new(node)),
-        })
+        Ok(
+            FilterPushdownPropagation::all_unsupported(child_pushdown_result)
+                .with_updated_node(Arc::new(node) as Arc<dyn ExecutionPlan>),
+        )
     }
 
     fn apply_expressions(
@@ -460,6 +461,8 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
+    use super::table::RemoteTable;
+    use super::*;
     use crate::sql::{
         RemoteTableRef, SQLExecutor, SQLFederationProvider, SQLTable, SQLTableSource,
     };
@@ -469,6 +472,11 @@ mod tests {
     use datafusion::common::tree_node::TreeNodeRecursion;
     use datafusion::common::TableReference;
     use datafusion::execution::SendableRecordBatchStream;
+    use datafusion::logical_expr::Operator;
+    use datafusion::physical_expr::expressions::{binary, col, lit};
+    use datafusion::physical_optimizer::{filter_pushdown::FilterPushdown, PhysicalOptimizerRule};
+    use datafusion::physical_plan::filter::FilterExec;
+    use datafusion::physical_plan::filter_pushdown::ChildFilterPushdownResult;
     use datafusion::sql::unparser::dialect::Dialect;
     use datafusion::sql::unparser::{self};
     use datafusion::{
@@ -476,9 +484,6 @@ mod tests {
         datasource::TableProvider,
         execution::context::SessionContext,
     };
-
-    use super::table::RemoteTable;
-    use super::*;
 
     #[derive(Debug, Clone)]
     struct TestExecutor {
@@ -872,5 +877,79 @@ mod tests {
         assert_eq!(rewrite_calls.load(Ordering::SeqCst), 1);
 
         Ok(())
+    }
+
+    fn test_virtual_execution_plan() -> VirtualExecutionPlan {
+        let executor = TestExecutor {
+            compute_context: "a".into(),
+        };
+        let table = get_test_table_provider("table_a1".to_string(), executor.clone());
+        let plan = datafusion::logical_expr::LogicalPlanBuilder::scan(
+            "table_a1",
+            datafusion::datasource::provider_as_source(table),
+            None,
+        )
+        .unwrap()
+        .build()
+        .unwrap();
+        let statistics = Statistics::new_unknown(plan.schema().as_arrow());
+        VirtualExecutionPlan::new(plan, Arc::new(executor), statistics)
+    }
+
+    fn a_greater_than(schema: &Schema, value: i64) -> Arc<dyn PhysicalExpr> {
+        binary(col("a", schema).unwrap(), Operator::Gt, lit(value), schema).unwrap()
+    }
+
+    /// The filters pushed down into a `VirtualExecutionPlan` are not part of its SQL query, and
+    /// a `SQLExecutor` may ignore them, so a `FilterExec` on top of it must be kept.
+    #[test]
+    fn filter_exec_above_virtual_execution_plan_is_kept() {
+        let scan: Arc<dyn ExecutionPlan> = Arc::new(test_virtual_execution_plan());
+        let predicate = a_greater_than(&scan.schema(), 1);
+        let plan = Arc::new(FilterExec::try_new(predicate, scan).unwrap());
+
+        let optimized = FilterPushdown::new()
+            .optimize(plan, &ConfigOptions::default())
+            .unwrap();
+        assert!(
+            optimized.downcast_ref::<FilterExec>().is_some(),
+            "the FilterExec should be kept:\n{}",
+            datafusion::physical_plan::displayable(optimized.as_ref()).indent(true)
+        );
+    }
+
+    /// Filters pushed down in separate pushdowns, e.g. the dynamic filters of a join and of a
+    /// TopK above it, are all passed to the executor.
+    #[test]
+    fn filters_pushed_down_separately_are_all_kept() {
+        let push = |plan: &VirtualExecutionPlan, filter: &Arc<dyn PhysicalExpr>| {
+            let result = plan
+                .handle_child_pushdown_result(
+                    FilterPushdownPhase::Post,
+                    ChildPushdownResult {
+                        parent_filters: vec![ChildFilterPushdownResult {
+                            filter: Arc::clone(filter),
+                            child_results: vec![],
+                        }],
+                        self_filters: vec![],
+                    },
+                    &ConfigOptions::default(),
+                )
+                .unwrap();
+            result
+                .updated_node
+                .expect("the filter should be added to the node")
+                .downcast_ref::<VirtualExecutionPlan>()
+                .unwrap()
+                .clone()
+        };
+
+        let plan = test_virtual_execution_plan();
+        let first = a_greater_than(&plan.schema(), 1);
+        let second = a_greater_than(&plan.schema(), 2);
+        let plan = push(&push(&plan, &first), &second);
+
+        let filters: Vec<String> = plan.filters.iter().map(|f| f.to_string()).collect();
+        assert_eq!(filters, vec![first.to_string(), second.to_string()]);
     }
 }
