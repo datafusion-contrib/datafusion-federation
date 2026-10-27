@@ -1,5 +1,6 @@
 mod analyzer;
 pub mod ast_analyzer;
+mod dynamic_filter;
 mod executor;
 mod schema;
 mod table;
@@ -19,7 +20,7 @@ use datafusion::{
     config::ConfigOptions,
     error::{DataFusionError, Result},
     execution::TaskContext,
-    logical_expr::{Extension, LogicalPlan},
+    logical_expr::{Extension, LogicalPlan, LogicalPlanBuilder},
     optimizer::{optimizer::Optimizer, OptimizerConfig, OptimizerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
@@ -27,11 +28,13 @@ use datafusion::{
         execution_plan::{Boundedness, EmissionType},
         filter_pushdown::{ChildPushdownResult, FilterPushdownPhase, FilterPushdownPropagation},
         metrics::MetricsSet,
+        stream::RecordBatchStreamAdapter,
         DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PhysicalExpr, PlanProperties,
         SendableRecordBatchStream, StatisticsArgs,
     },
     sql::{sqlparser::ast::Statement, unparser::Unparser},
 };
+use futures::TryStreamExt;
 
 pub use executor::{AstAnalyzer, LogicalOptimizer, SQLExecutor, SQLExecutorRef, SqlQueryRewriter};
 pub use schema::{MultiSchemaProvider, SQLSchemaProvider};
@@ -160,6 +163,9 @@ impl FederationPlanner for SQLFederationPlanner {
     }
 }
 
+/// The alias of the derived table the runtime/dynamic filters are applied to.
+const FILTERED_PLAN_ALIAS: &str = "federated_filtered";
+
 #[derive(Debug, Clone)]
 pub struct VirtualExecutionPlan {
     plan: LogicalPlan,
@@ -205,7 +211,41 @@ impl VirtualExecutionPlan {
     }
 
     fn final_sql(&self) -> Result<String> {
-        let plan = self.plan.clone();
+        self.plan_to_final_sql(self.plan.clone())
+    }
+
+    /// Like [`Self::final_sql`], but narrows down the query with the current state of the
+    /// runtime filters, as far as they can be expressed in SQL.
+    ///
+    /// Falls back to the unfiltered query if the filtered plan cannot be unparsed.
+    fn final_sql_with_filters(&self) -> Result<String> {
+        if let Some(plan) = self.filtered_plan()? {
+            if let Ok(sql) = self.plan_to_final_sql(plan) {
+                return Ok(sql);
+            }
+        }
+        self.final_sql()
+    }
+
+    /// Wraps the federated plan as a derived table filtered by the runtime filters, so the
+    /// predicate applies to the output of the plan regardless of its shape (e.g. a `LIMIT`).
+    fn filtered_plan(&self) -> Result<Option<LogicalPlan>> {
+        if self.filters.is_empty() {
+            return Ok(None);
+        }
+        let Ok(aliased) = LogicalPlanBuilder::from(self.plan.clone()).alias(FILTERED_PLAN_ALIAS)
+        else {
+            return Ok(None);
+        };
+        let Some(predicate) =
+            dynamic_filter::filters_to_predicate(&self.filters, &self.schema(), aliased.schema())?
+        else {
+            return Ok(None);
+        };
+        aliased.filter(predicate)?.build().map(Some)
+    }
+
+    fn plan_to_final_sql(&self, plan: LogicalPlan) -> Result<String> {
         let plan = RewriteTableScanAnalyzer::rewrite(plan)?;
         let (logical_optimizers, ast_analyzers, sql_query_rewriters) = gather_analyzers(&plan)?;
         let plan = apply_logical_optimizers(plan, logical_optimizers)?;
@@ -364,6 +404,11 @@ impl DisplayAs for VirtualExecutionPlan {
             write!(f, " rewritten_sql_query={rewritten_sql}")?;
         }
 
+        if !self.filters.is_empty() {
+            let filters: Vec<_> = self.filters.iter().map(|f| f.to_string()).collect();
+            write!(f, " filters=[{}]", filters.join(", "))?;
+        }
+
         Ok(())
     }
 }
@@ -393,8 +438,24 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _partition: usize,
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
-        self.executor
-            .execute(&self.final_sql()?, self.schema(), &self.filters)
+        if self.filters.is_empty() {
+            return self
+                .executor
+                .execute(&self.final_sql()?, self.schema(), &[]);
+        }
+
+        // Dynamic filters are only populated once execution is underway (e.g. after a join has
+        // built its hash table), so the SQL query is generated when the stream is first polled.
+        let this = self.clone();
+        let stream = futures::stream::once(async move {
+            let sql = this.final_sql_with_filters()?;
+            this.executor.execute(&sql, this.schema(), &this.filters)
+        })
+        .try_flatten();
+        Ok(Box::pin(RecordBatchStreamAdapter::new(
+            self.schema(),
+            stream,
+        )))
     }
 
     fn properties(&self) -> &Arc<PlanProperties> {
@@ -413,11 +474,11 @@ impl ExecutionPlan for VirtualExecutionPlan {
         self.executor.metrics()
     }
 
-    /// Passes the dynamic filters pushed down at runtime (e.g. by joins and TopK) to the
-    /// [`SQLExecutor`], which may use them to narrow down the query.
+    /// Takes the dynamic filters pushed down at runtime (e.g. by joins and TopK) to narrow down
+    /// the SQL query, and passes them to the [`SQLExecutor`].
     ///
-    /// The filters are never reported as pushed down: they are not part of the SQL query, and
-    /// the executor may ignore them. Static filters (those pushed down before the
+    /// The filters are never reported as pushed down: only the parts that can be expressed in SQL
+    /// end up in the query. Static filters (those pushed down before the
     /// [`FilterPushdownPhase::Post`] phase, such as the predicate of a `FilterExec`) are not
     /// taken at all, so DataFusion keeps evaluating them.
     fn handle_child_pushdown_result(
@@ -951,5 +1012,239 @@ mod tests {
 
         let filters: Vec<String> = plan.filters.iter().map(|f| f.to_string()).collect();
         assert_eq!(filters, vec![first.to_string(), second.to_string()]);
+    }
+
+    /// Records the SQL queries it executes, returning no rows.
+    #[derive(Debug, Clone, Default)]
+    struct RecordingExecutor {
+        queries: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl RecordingExecutor {
+        fn queries(&self) -> Vec<String> {
+            self.queries.lock().unwrap().clone()
+        }
+    }
+
+    #[async_trait]
+    impl SQLExecutor for RecordingExecutor {
+        fn name(&self) -> &str {
+            "RecordingExecutor"
+        }
+
+        fn compute_context(&self) -> Option<String> {
+            Some("recording".into())
+        }
+
+        fn dialect(&self) -> Arc<dyn Dialect> {
+            Arc::new(unparser::dialect::DefaultDialect {})
+        }
+
+        fn execute(
+            &self,
+            query: &str,
+            schema: SchemaRef,
+            _filters: &[Arc<dyn PhysicalExpr>],
+        ) -> Result<SendableRecordBatchStream> {
+            self.queries.lock().unwrap().push(query.to_string());
+            Ok(Box::pin(
+                datafusion::physical_plan::EmptyRecordBatchStream::new(schema),
+            ))
+        }
+
+        async fn table_names(&self) -> Result<Vec<String>> {
+            unimplemented!()
+        }
+
+        async fn get_table_schema(&self, _table_name: &str) -> Result<SchemaRef> {
+            unimplemented!()
+        }
+    }
+
+    fn recording_scan(executor: &RecordingExecutor, name: &str) -> LogicalPlanBuilder {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("a", DataType::Int64, false),
+            Field::new("b", DataType::Utf8, false),
+        ]));
+        let table = Arc::new(RemoteTable::new(
+            RemoteTableRef::try_from(name.to_string()).unwrap(),
+            schema,
+        ));
+        let provider = Arc::new(SQLFederationProvider::new(Arc::new(executor.clone())));
+        let source = Arc::new(SQLTableSource { provider, table });
+        let adaptor = Arc::new(FederatedTableProviderAdaptor::new(source));
+        LogicalPlanBuilder::scan(
+            name,
+            datafusion::datasource::provider_as_source(adaptor),
+            None,
+        )
+        .unwrap()
+    }
+
+    fn recording_plan(
+        executor: &RecordingExecutor,
+        plan: LogicalPlanBuilder,
+        filters: Vec<Arc<dyn PhysicalExpr>>,
+    ) -> VirtualExecutionPlan {
+        let plan = plan.build().unwrap();
+        let statistics = Statistics::new_unknown(plan.schema().as_arrow());
+        let mut plan = VirtualExecutionPlan::new(plan, Arc::new(executor.clone()), statistics);
+        plan.filters = filters;
+        plan
+    }
+
+    #[test]
+    fn sql_without_filters_is_not_wrapped() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_plan(&executor, recording_scan(&executor, "t"), vec![]);
+        assert_eq!(
+            plan.final_sql_with_filters().unwrap(),
+            plan.final_sql().unwrap()
+        );
+    }
+
+    #[test]
+    fn filters_are_applied_to_a_derived_table() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_scan(&executor, "t");
+        let schema = plan.schema().as_arrow().clone();
+        let plan = recording_plan(&executor, plan, vec![a_greater_than(&schema, 1)]);
+        assert_eq!(
+            plan.final_sql_with_filters().unwrap(),
+            "SELECT * FROM t AS federated_filtered WHERE (federated_filtered.a > 1)"
+        );
+    }
+
+    /// Filtering the input of a `LIMIT` would return other rows than filtering its output.
+    #[test]
+    fn filters_are_applied_after_a_limit() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_scan(&executor, "t").limit(0, Some(10)).unwrap();
+        let schema = plan.schema().as_arrow().clone();
+        let plan = recording_plan(&executor, plan, vec![a_greater_than(&schema, 1)]);
+        let sql = plan.final_sql_with_filters().unwrap();
+        assert_eq!(
+            sql,
+            "SELECT * FROM (SELECT * FROM t LIMIT 10) AS federated_filtered \
+             WHERE (federated_filtered.a > 1)"
+        );
+    }
+
+    #[test]
+    fn untranslatable_filters_leave_the_sql_unchanged() {
+        let executor = RecordingExecutor::default();
+        let filters: Vec<Arc<dyn PhysicalExpr>> = vec![
+            Arc::new(datafusion::physical_expr::expressions::NoOp::new()),
+            lit(true),
+        ];
+        let plan = recording_plan(&executor, recording_scan(&executor, "t"), filters);
+        assert_eq!(
+            plan.final_sql_with_filters().unwrap(),
+            plan.final_sql().unwrap()
+        );
+    }
+
+    /// The derived table deduplicates column names, so filters must be resolved by index.
+    #[test]
+    fn filters_on_duplicate_column_names_use_the_deduplicated_name() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_scan(&executor, "t1")
+            .cross_join(recording_scan(&executor, "t2").build().unwrap())
+            .unwrap();
+        let schema = plan.schema().as_arrow().clone();
+        // `t2.a`, the second column named `a`.
+        let t2_a: Arc<dyn PhysicalExpr> =
+            Arc::new(datafusion::physical_expr::expressions::Column::new("a", 2));
+        let filter = binary(t2_a, Operator::Gt, lit(1i64), &schema).unwrap();
+        let plan = recording_plan(&executor, plan, vec![filter]);
+        assert_eq!(
+            plan.final_sql_with_filters().unwrap(),
+            "SELECT * FROM (SELECT t1.a, t1.b, t2.a AS \"a:1\", t2.b AS \"b:1\" \
+             FROM t1 CROSS JOIN t2) AS federated_filtered \
+             WHERE (federated_filtered.\"a:1\" > 1)"
+        );
+    }
+
+    #[tokio::test]
+    async fn sql_is_generated_when_the_stream_is_first_polled() {
+        use datafusion::physical_expr::expressions::DynamicFilterPhysicalExpr;
+        use futures::StreamExt;
+
+        let executor = RecordingExecutor::default();
+        let plan = recording_scan(&executor, "t");
+        let schema = plan.schema().as_arrow().clone();
+        let a = col("a", &schema).unwrap();
+        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(vec![a], lit(true)));
+        let plan = recording_plan(&executor, plan, vec![Arc::clone(&dynamic) as _]);
+
+        let mut stream = plan.execute(0, Arc::new(TaskContext::default())).unwrap();
+        assert!(
+            executor.queries().is_empty(),
+            "nothing executed before polling"
+        );
+
+        // E.g. a join finishing its build side after the plan was executed.
+        dynamic.update(a_greater_than(&schema, 5)).unwrap();
+        assert!(stream.next().await.is_none());
+
+        assert_eq!(
+            executor.queries(),
+            vec![
+                "SELECT * FROM t AS federated_filtered WHERE (federated_filtered.a > 5)"
+                    .to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn sql_without_filters_is_executed_immediately() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_plan(&executor, recording_scan(&executor, "t"), vec![]);
+        let _stream = plan.execute(0, Arc::new(TaskContext::default())).unwrap();
+        assert_eq!(executor.queries(), vec![plan.final_sql().unwrap()]);
+    }
+
+    #[test]
+    fn display_shows_filters() {
+        use datafusion::physical_expr::expressions::DynamicFilterPhysicalExpr;
+
+        let executor = RecordingExecutor::default();
+        let plan = recording_scan(&executor, "t");
+        let schema = plan.schema().as_arrow().clone();
+        let a = col("a", &schema).unwrap();
+        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(vec![a], lit(true)));
+        let plan = recording_plan(
+            &executor,
+            plan,
+            vec![a_greater_than(&schema, 1), Arc::clone(&dynamic) as _],
+        );
+        let display = || {
+            datafusion::physical_plan::displayable(&plan)
+                .one_line()
+                .to_string()
+        };
+
+        assert!(
+            display().ends_with("filters=[a@0 > 1, DynamicFilter [ empty ]]\n"),
+            "{}",
+            display()
+        );
+        dynamic.update(a_greater_than(&schema, 5)).unwrap();
+        assert!(
+            display().ends_with("filters=[a@0 > 1, DynamicFilter [ a@0 > 5 ]]\n"),
+            "{}",
+            display()
+        );
+        assert!(!display().contains("federated_filtered"), "{}", display());
+    }
+
+    #[test]
+    fn display_omits_filters_when_there_are_none() {
+        let executor = RecordingExecutor::default();
+        let plan = recording_plan(&executor, recording_scan(&executor, "t"), vec![]);
+        let display = datafusion::physical_plan::displayable(&plan)
+            .one_line()
+            .to_string();
+        assert!(!display.contains("filters="), "{display}");
     }
 }

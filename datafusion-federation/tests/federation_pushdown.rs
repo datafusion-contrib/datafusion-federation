@@ -10,6 +10,9 @@
 
 mod support;
 
+use std::sync::Arc;
+
+use datafusion::{arrow::array::RecordBatch, prelude::SessionContext};
 use support::{
     recorded_sql, remote_ctx, row_count, run_federated, schema_provider,
     try_run_without_federation, RecordingSQLExecutor,
@@ -187,5 +190,352 @@ async fn cross_provider_join() {
     assert!(
         !sqlite_sql.contains("test_pg"),
         "sqlite remote must not see the postgres table: {sqlite_sql}"
+    );
+}
+
+/// Two remotes, one with `customers` and one with `orders`, and the SQL each received.
+struct JoinFixture {
+    ctx: SessionContext,
+    customers_queries: Arc<std::sync::Mutex<Vec<String>>>,
+    orders_queries: Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl JoinFixture {
+    async fn new() -> Self {
+        use datafusion_federation::sql::MultiSchemaProvider;
+
+        let orders_ctx = remote_ctx("orders", "orders.csv").await;
+        let orders_exec = RecordingSQLExecutor::new("orders", "orders_exec", orders_ctx);
+        let orders_queries = orders_exec.queries();
+        let orders_schema = schema_provider(Arc::new(orders_exec), &["orders"]).await;
+
+        let customers_ctx = remote_ctx("customers", "customers.csv").await;
+        let customers_exec =
+            RecordingSQLExecutor::new("customers", "customers_exec", customers_ctx);
+        let customers_queries = customers_exec.queries();
+        let customers_schema = schema_provider(Arc::new(customers_exec), &["customers"]).await;
+
+        let state = datafusion_federation::default_session_state();
+        support::overwrite_default_schema(
+            &state,
+            Arc::new(MultiSchemaProvider::new(vec![
+                orders_schema,
+                customers_schema,
+            ])),
+        );
+        Self {
+            ctx: SessionContext::new_with_state(state),
+            customers_queries,
+            orders_queries,
+        }
+    }
+
+    async fn set(&self, option: &str, value: &str) {
+        self.ctx
+            .sql(&format!("SET {option} = {value}"))
+            .await
+            .expect("set option");
+    }
+
+    /// Runs `query`, returning its rows and the plan displayed after execution, when the
+    /// dynamic filters are populated.
+    async fn run(&self, query: &str) -> (Vec<RecordBatch>, String) {
+        use datafusion::physical_plan::{collect, displayable};
+
+        let df = self.ctx.sql(query).await.expect("plan query");
+        let plan = df.create_physical_plan().await.expect("physical plan");
+        let batches = collect(Arc::clone(&plan), self.ctx.task_ctx())
+            .await
+            .expect("collect");
+        let display = displayable(plan.as_ref()).indent(true).to_string();
+        (batches, display)
+    }
+
+    fn customers_sql(&self) -> String {
+        recorded_sql(&self.customers_queries)
+    }
+
+    fn orders_sql(&self) -> String {
+        recorded_sql(&self.orders_queries)
+    }
+}
+
+/// The `WHERE` clause federation added to `sql` for the dynamic filters, if any.
+fn dynamic_filter_sql(sql: &str) -> Option<&str> {
+    sql.split_once("as federated_filtered where ")
+        .map(|(_, predicate)| predicate)
+}
+
+/// The dynamic filter a hash join derives from its build side (customers with
+/// `account_number = 22`) is pushed into the SQL sent to the probe side (orders),
+/// so the orders remote only returns orders of matching customers.
+#[tokio::test]
+async fn join_dynamic_filter_is_pushed_to_remote() {
+    let fixture = JoinFixture::new().await;
+    let (batches, plan) = fixture
+        .run(
+            "SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    assert_eq!(row_count(&batches), 2, "customer 2 has two orders");
+
+    let customers_sql = fixture.customers_sql();
+    assert!(
+        customers_sql.contains("customers") && !customers_sql.contains("orders"),
+        "customers remote should only scan its table: {customers_sql}"
+    );
+    assert!(
+        dynamic_filter_sql(&customers_sql).is_none(),
+        "the build side gets no dynamic filter: {customers_sql}"
+    );
+
+    let orders_sql = fixture.orders_sql();
+    assert!(
+        orders_sql.contains("orders") && !orders_sql.contains("customers"),
+        "orders remote should only scan its table: {orders_sql}"
+    );
+    let predicate = dynamic_filter_sql(&orders_sql)
+        .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
+    assert!(
+        predicate.contains("federated_filtered.customer_id >= 2")
+            && predicate.contains("federated_filtered.customer_id <= 2")
+            && predicate.contains("federated_filtered.customer_id in (2)"),
+        "the filter should restrict orders to customer 2: {predicate}"
+    );
+    assert!(
+        plan.contains("filters=[DynamicFilter [ ") && !plan.contains("DynamicFilter [ empty ]"),
+        "the populated dynamic filter should be displayed: {plan}"
+    );
+}
+
+/// The orders remote only returns the orders of the matching customers.
+#[tokio::test]
+async fn join_dynamic_filter_restricts_remote_rows() {
+    let fixture = JoinFixture::new().await;
+    // Count what the remote returns by running the recorded query against the same data.
+    let (batches, _) = fixture
+        .run(
+            "SELECT o.order_id FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+    assert_eq!(row_count(&batches), 2);
+
+    let orders_sql = fixture.orders_queries.lock().unwrap()[0].clone();
+    let remote = remote_ctx("orders", "orders.csv").await;
+    let remote_rows = support::collect(remote.sql(&orders_sql).await.expect("remote query")).await;
+    assert_eq!(
+        row_count(&remote_rows),
+        2,
+        "the remote should only return the 2 orders of customer 2, not all 4: {orders_sql}"
+    );
+}
+
+/// The join keys of several customers end up in the filter, and all their orders are returned.
+#[tokio::test]
+async fn join_dynamic_filter_with_several_build_rows() {
+    let fixture = JoinFixture::new().await;
+    let (batches, _) = fixture
+        .run(
+            "SELECT o.order_id FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number IN (11, 22) \
+             ORDER BY o.order_id",
+        )
+        .await;
+
+    assert_eq!(
+        row_count(&batches),
+        3,
+        "customers 1 and 2 have three orders"
+    );
+    let orders_sql = fixture.orders_sql();
+    let predicate = dynamic_filter_sql(&orders_sql)
+        .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
+    assert!(
+        predicate.contains("customer_id"),
+        "the filter should be on the join key: {predicate}"
+    );
+    assert!(
+        !predicate.contains("3") && !predicate.contains("4"),
+        "the filter should only allow customers 1 and 2: {predicate}"
+    );
+}
+
+/// When no customer matches, the probe side can be skipped entirely: the remote gets `false`.
+#[tokio::test]
+async fn join_dynamic_filter_with_empty_build_side() {
+    let fixture = JoinFixture::new().await;
+    let (batches, _) = fixture
+        .run(
+            "SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 99",
+        )
+        .await;
+
+    assert_eq!(row_count(&batches), 0);
+    // DataFusion may not even execute the probe side when the build side is empty.
+    let orders_sql = fixture.orders_sql();
+    if !orders_sql.is_empty() {
+        assert_eq!(
+            dynamic_filter_sql(&orders_sql),
+            Some("false"),
+            "an empty build side should filter out all orders: {orders_sql}"
+        );
+    }
+}
+
+/// With a single partition the join collects its build side instead of partitioning it, which
+/// produces a dynamic filter without the per-partition `CASE`.
+#[tokio::test]
+async fn join_dynamic_filter_in_collect_left_mode() {
+    let fixture = JoinFixture::new().await;
+    fixture
+        .set("datafusion.execution.target_partitions", "1")
+        .await;
+    let (batches, plan) = fixture
+        .run(
+            "SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    assert!(plan.contains("mode=CollectLeft"), "{plan}");
+    assert_eq!(row_count(&batches), 2);
+    let orders_sql = fixture.orders_sql();
+    let predicate = dynamic_filter_sql(&orders_sql)
+        .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
+    assert!(predicate.contains("in (2)"), "{predicate}");
+}
+
+/// When the build side is too large for an `IN` list, the join uses a hash table lookup, which
+/// has no SQL equivalent. Only the min/max bounds of the join keys are pushed down.
+#[tokio::test]
+async fn join_dynamic_filter_hash_lookup_pushes_only_bounds() {
+    let fixture = JoinFixture::new().await;
+    fixture
+        .set(
+            "datafusion.optimizer.hash_join_inlist_pushdown_max_distinct_values",
+            "0",
+        )
+        .await;
+    let (batches, plan) = fixture
+        .run(
+            "SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    assert_eq!(row_count(&batches), 2);
+    assert!(plan.contains("hash_lookup"), "{plan}");
+    let orders_sql = fixture.orders_sql();
+    let predicate = dynamic_filter_sql(&orders_sql)
+        .unwrap_or_else(|| panic!("the bounds should still be pushed down: {orders_sql}"));
+    assert!(
+        predicate.contains(">= 2") && predicate.contains("<= 2") && !predicate.contains(" in "),
+        "only the bounds should be pushed down: {predicate}"
+    );
+}
+
+/// Disabling dynamic filters leaves the remote queries untouched.
+#[tokio::test]
+async fn join_without_dynamic_filter_pushdown() {
+    let fixture = JoinFixture::new().await;
+    fixture
+        .set(
+            "datafusion.optimizer.enable_join_dynamic_filter_pushdown",
+            "false",
+        )
+        .await;
+    let (batches, plan) = fixture
+        .run(
+            "SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    assert_eq!(row_count(&batches), 2);
+    assert!(!plan.contains("DynamicFilter"), "{plan}");
+    let orders_sql = fixture.orders_sql();
+    assert!(
+        dynamic_filter_sql(&orders_sql).is_none(),
+        "the orders query should not be filtered: {orders_sql}"
+    );
+}
+
+/// The preserved side of an outer join must not be narrowed down by the other side.
+#[tokio::test]
+async fn left_join_keeps_all_rows_of_the_preserved_side() {
+    let fixture = JoinFixture::new().await;
+    let (batches, _) = fixture
+        .run(
+            "SELECT o.order_id, c.customer_name FROM orders o \
+             LEFT JOIN (SELECT * FROM customers WHERE account_number = 22) c \
+             ON o.customer_id = c.customer_id",
+        )
+        .await;
+
+    assert_eq!(row_count(&batches), 4, "every order is kept");
+    let orders_sql = fixture.orders_sql();
+    assert!(
+        dynamic_filter_sql(&orders_sql).is_none(),
+        "the preserved orders must not be filtered: {orders_sql}"
+    );
+}
+
+/// The probe side is a federated `LIMIT`: the filter must apply to the limited rows, not narrow
+/// down the rows the limit picks from.
+#[tokio::test]
+async fn join_dynamic_filter_is_applied_after_remote_limit() {
+    let fixture = JoinFixture::new().await;
+    let (batches, _) = fixture
+        .run(
+            "SELECT c.customer_id, o.order_id FROM customers c \
+             INNER JOIN (SELECT * FROM orders ORDER BY order_id LIMIT 2) o \
+             ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    // The first two orders are 1 (customer 2) and 2 (customer 1).
+    assert_eq!(row_count(&batches), 1, "only order 1 belongs to customer 2");
+    let orders_sql = fixture.orders_sql();
+    let (limited, _) = orders_sql
+        .split_once("as federated_filtered where")
+        .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
+    assert!(
+        limited.contains("limit 2"),
+        "the limit should be inside the filtered derived table: {orders_sql}"
+    );
+}
+
+/// A dynamic filter from a federated join is also displayed in `EXPLAIN ANALYZE`.
+#[tokio::test]
+async fn explain_analyze_shows_dynamic_filter() {
+    let fixture = JoinFixture::new().await;
+    let (batches, _) = fixture
+        .run(
+            "EXPLAIN ANALYZE SELECT c.*, o.* FROM customers c \
+             INNER JOIN orders o ON o.customer_id = c.customer_id \
+             WHERE c.account_number = 22",
+        )
+        .await;
+
+    let explained = datafusion::arrow::util::pretty::pretty_format_batches(&batches)
+        .expect("format")
+        .to_string();
+    assert!(
+        explained.contains("VirtualExecutionPlan name=orders")
+            && explained.contains("filters=[DynamicFilter [ ")
+            && !explained.contains("DynamicFilter [ empty ]"),
+        "{explained}"
     );
 }
