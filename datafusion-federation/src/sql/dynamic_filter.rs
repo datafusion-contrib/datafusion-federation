@@ -61,6 +61,8 @@
 //! [`relax`]): untranslatable parts are widened until the predicate can be expressed, and the
 //! remote may return more rows than the filters would keep, but never fewer.
 //!
+//! ### Note
+//!
 //! Comparisons of strings and binary values (including `IN` lists and `LIKE`) are never sent to
 //! the remote, even though they have SQL equivalents. DataFusion compares them byte by byte, while
 //! the remote may compare them using a collation (case or accent insensitive, ignoring trailing

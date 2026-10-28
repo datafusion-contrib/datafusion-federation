@@ -219,7 +219,7 @@ impl VirtualExecutionPlan {
     ///
     /// Falls back to the unfiltered query if the filtered plan cannot be unparsed.
     fn final_sql_with_filters(&self) -> Result<String> {
-        if let Some(plan) = self.filtered_plan()? {
+        if let Ok(Some(plan)) = self.filtered_plan() {
             if let Ok(sql) = self.plan_to_final_sql(plan) {
                 return Ok(sql);
             }
