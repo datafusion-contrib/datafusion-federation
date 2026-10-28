@@ -17,6 +17,7 @@ use support::{
     recorded_sql, remote_ctx, row_count, run_federated, schema_provider,
     try_run_without_federation, RecordingSQLExecutor,
 };
+use datafusion_federation::sql::FILTERED_PLAN_ALIAS;
 
 /// `SELECT *` returns every row of the remote table.
 #[tokio::test]
@@ -262,7 +263,7 @@ impl JoinFixture {
 
 /// The `WHERE` clause federation added to `sql` for the dynamic filters, if any.
 fn dynamic_filter_sql(sql: &str) -> Option<&str> {
-    sql.split_once("as federated_filtered where ")
+    sql.split_once(&format!("as {FILTERED_PLAN_ALIAS} where "))
         .map(|(_, predicate)| predicate)
 }
 
@@ -300,9 +301,9 @@ async fn join_dynamic_filter_is_pushed_to_remote() {
     let predicate = dynamic_filter_sql(&orders_sql)
         .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
     assert!(
-        predicate.contains("federated_filtered.customer_id >= 2")
-            && predicate.contains("federated_filtered.customer_id <= 2")
-            && predicate.contains("federated_filtered.customer_id in (2)"),
+        predicate.contains(&format!("{FILTERED_PLAN_ALIAS}.customer_id >= 2"))
+            && predicate.contains(&format!("{FILTERED_PLAN_ALIAS}.customer_id <= 2"))
+            && predicate.contains(&format!("{FILTERED_PLAN_ALIAS}.customer_id in (2)")),
         "the filter should restrict orders to customer 2: {predicate}"
     );
     // Rerun the remote's query against the same data to count the rows it returned.
@@ -494,7 +495,7 @@ async fn join_dynamic_filter_is_applied_after_remote_limit() {
     assert_eq!(row_count(&batches), 1, "only order 1 belongs to customer 2");
     let orders_sql = fixture.orders_sql();
     let (limited, _) = orders_sql
-        .split_once("as federated_filtered where")
+        .split_once(&format!("as {FILTERED_PLAN_ALIAS} where"))
         .unwrap_or_else(|| panic!("the orders query should be filtered: {orders_sql}"));
     assert!(
         limited.contains("limit 2"),

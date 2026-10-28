@@ -119,6 +119,7 @@ pub(crate) fn filters_to_predicate(
     input: &Schema,
     output: &DFSchema,
 ) -> Result<Option<Expr>> {
+    debug_assert_eq!(input.fields.len(), output.fields().len());
     let columns: Vec<_> = input
         .fields()
         .iter()
@@ -383,7 +384,7 @@ mod tests {
         let (schema, _) = schemas();
         let a = phys_col("a", &schema).unwrap();
         // An unknown expression standing in for e.g. a hash table lookup.
-        let opaque: Arc<dyn PhysicalExpr> = Arc::new(phys::NoOp::new());
+        let opaque: Arc<dyn PhysicalExpr> = opaque();
         let filter = binary(
             binary(a, Operator::Gt, phys_lit(1i64), &schema).unwrap(),
             Operator::And,
@@ -403,7 +404,7 @@ mod tests {
         let filter = binary(
             binary(a, Operator::Gt, phys_lit(1i64), &schema).unwrap(),
             Operator::Or,
-            Arc::new(phys::NoOp::new()),
+            opaque(),
             &schema,
         )
         .unwrap();

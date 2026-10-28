@@ -164,7 +164,7 @@ impl FederationPlanner for SQLFederationPlanner {
 }
 
 /// The alias of the derived table the runtime/dynamic filters are applied to.
-const FILTERED_PLAN_ALIAS: &str = "federated_filtered";
+pub const FILTERED_PLAN_ALIAS: &str = "federated_filtered";
 
 #[derive(Debug, Clone)]
 pub struct VirtualExecutionPlan {
