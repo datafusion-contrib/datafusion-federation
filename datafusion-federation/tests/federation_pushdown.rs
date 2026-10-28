@@ -13,11 +13,11 @@ mod support;
 use std::sync::Arc;
 
 use datafusion::{arrow::array::RecordBatch, prelude::SessionContext};
+use datafusion_federation::sql::FILTERED_PLAN_ALIAS;
 use support::{
     recorded_sql, remote_ctx, row_count, run_federated, schema_provider,
     try_run_without_federation, RecordingSQLExecutor,
 };
-use datafusion_federation::sql::FILTERED_PLAN_ALIAS;
 
 /// `SELECT *` returns every row of the remote table.
 #[tokio::test]
@@ -523,5 +523,61 @@ async fn explain_analyze_shows_dynamic_filter() {
             && explained.contains("filters=[DynamicFilter [ ")
             && !explained.contains("DynamicFilter [ empty ]"),
         "{explained}"
+    );
+}
+
+/// The dynamic filter of a join on a string key is not pushed to the remote: DataFusion compares
+/// strings byte by byte, while the remote may use a collation (e.g. a case-insensitive one) and
+/// drop rows DataFusion would keep. DataFusion still applies the filter locally.
+#[tokio::test]
+async fn join_dynamic_filter_on_string_key_is_not_pushed_to_remote() {
+    use datafusion::physical_plan::{collect, displayable};
+    use datafusion_federation::sql::MultiSchemaProvider;
+
+    let build_ctx = remote_ctx("build", "test.csv").await;
+    let build_exec = RecordingSQLExecutor::new("build", "build_exec", build_ctx);
+    let build_schema = schema_provider(Arc::new(build_exec), &["build"]).await;
+
+    let probe_ctx = remote_ctx("probe", "test2.csv").await;
+    let probe_exec = RecordingSQLExecutor::new("probe", "probe_exec", probe_ctx);
+    let probe_queries = probe_exec.queries();
+    let probe_schema = schema_provider(Arc::new(probe_exec), &["probe"]).await;
+
+    let state = datafusion_federation::default_session_state();
+    support::overwrite_default_schema(
+        &state,
+        Arc::new(MultiSchemaProvider::new(vec![build_schema, probe_schema])),
+    );
+    let ctx = SessionContext::new_with_state(state);
+
+    let df = ctx
+        .sql(
+            "SELECT p.foo, p.bar FROM build b \
+             INNER JOIN probe p ON p.foo = b.foo \
+             WHERE b.bar = 2",
+        )
+        .await
+        .expect("plan query");
+    let plan = df.create_physical_plan().await.expect("physical plan");
+    let batches = collect(Arc::clone(&plan), ctx.task_ctx())
+        .await
+        .expect("collect");
+    let plan = displayable(plan.as_ref()).indent(true).to_string();
+
+    assert_eq!(row_count(&batches), 1, "only `b` is on both sides");
+    assert!(
+        plan.contains("VirtualExecutionPlan name=probe")
+            && plan.contains("filters=[DynamicFilter [ ")
+            && !plan.contains("DynamicFilter [ empty ]"),
+        "the probe side should get a populated dynamic filter: {plan}"
+    );
+    let probe_sql = recorded_sql(&probe_queries);
+    assert!(
+        probe_sql.contains("probe"),
+        "the probe remote should scan its table: {probe_sql}"
+    );
+    assert!(
+        dynamic_filter_sql(&probe_sql).is_none(),
+        "the string comparisons should not be pushed down: {probe_sql}"
     );
 }

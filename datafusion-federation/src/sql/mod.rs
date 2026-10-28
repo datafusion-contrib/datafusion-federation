@@ -478,7 +478,8 @@ impl ExecutionPlan for VirtualExecutionPlan {
     /// the SQL query, and passes them to the [`SQLExecutor`].
     ///
     /// The filters are never reported as pushed down: only the parts that can be expressed in SQL
-    /// end up in the query. Static filters (those pushed down before the
+    /// end up in the query, without comparisons of strings, which the remote may compare using a
+    /// collation rather than byte by byte like DataFusion. Static filters (those pushed down before the
     /// [`FilterPushdownPhase::Post`] phase, such as the predicate of a `FilterExec`) are not
     /// taken at all, so DataFusion keeps evaluating them.
     fn handle_child_pushdown_result(

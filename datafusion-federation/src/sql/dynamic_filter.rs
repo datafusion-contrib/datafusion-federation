@@ -60,15 +60,22 @@
 //! Not every physical expression has a SQL equivalent, so the translation is a *relaxation* (see
 //! [`relax`]): untranslatable parts are widened until the predicate can be expressed, and the
 //! remote may return more rows than the filters would keep, but never fewer.
+//!
+//! Comparisons of strings and binary values (including `IN` lists and `LIKE`) are never sent to
+//! the remote, even though they have SQL equivalents. DataFusion compares them byte by byte, while
+//! the remote may compare them using a collation (case or accent insensitive, ignoring trailing
+//! spaces, ...) and drop rows DataFusion would keep. A dynamic filter on a string join key is
+//! thus not pushed down, and only the comparisons of other types are kept from a filter on
+//! several join keys (see [`exact`]).
 
 use std::sync::Arc;
 
 use datafusion::{
-    arrow::datatypes::Schema,
+    arrow::datatypes::{DataType, Schema},
     common::{Column, DFSchema, ScalarValue},
     error::Result,
     logical_expr::{
-        expr::{Cast, InList, Like, TryCast},
+        expr::{Cast, InList, TryCast},
         lit, BinaryExpr, Expr, Operator,
     },
     physical_expr::expressions::{self as phys},
@@ -86,7 +93,8 @@ use datafusion::{
 ///
 /// The predicate is a relaxation: every row for which all `filters` are true also satisfies the
 /// predicate, but not necessarily the other way around. Parts that cannot be expressed in SQL
-/// (such as hash table lookups or the hash routing of partitioned joins) are widened to `true`.
+/// (such as hash table lookups or the hash routing of partitioned joins), or whose meaning may
+/// differ at the remote (comparisons of strings), are widened to `true`.
 /// This is sound because the remote only gets to drop rows the filters would drop anyway, while
 /// DataFusion still evaluates the original filters locally.
 ///
@@ -130,7 +138,7 @@ pub(crate) fn filters_to_predicate(
     let mut predicates = vec![];
     for filter in filters {
         let filter = snapshot_physical_expr(Arc::clone(filter))?;
-        if let Some(predicate) = relax(&filter, &columns) {
+        if let Some(predicate) = relax(&filter, &columns, input) {
             predicates.push(predicate);
         }
     }
@@ -177,7 +185,7 @@ type Columns<'a> = [(&'a str, Column)];
 /// CASE .. WHEN 0 THEN a@0 = 1 ELSE true    =>  None
 /// false                                    =>  Some(false)
 /// ```
-fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
+fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns, input: &Schema) -> Option<Expr> {
     if let Some(literal) = expr.downcast_ref::<phys::Literal>() {
         return match literal.value() {
             ScalarValue::Boolean(Some(true)) => None,
@@ -189,16 +197,16 @@ fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
         match binary.op() {
             Operator::And => {
                 return match (
-                    relax(binary.left(), columns),
-                    relax(binary.right(), columns),
+                    relax(binary.left(), columns, input),
+                    relax(binary.right(), columns, input),
                 ) {
                     (Some(left), Some(right)) => Some(left.and(right)),
                     (left, right) => left.or(right),
                 };
             }
             Operator::Or => {
-                let left = relax(binary.left(), columns)?;
-                let right = relax(binary.right(), columns)?;
+                let left = relax(binary.left(), columns, input)?;
+                let right = relax(binary.right(), columns, input)?;
                 return Some(left.or(right));
             }
             _ => {}
@@ -213,7 +221,7 @@ fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
         let thens = case.when_then_expr().iter().map(|(_, then)| then);
         for branch in thens.chain(case.else_expr()) {
             // A branch widened to `true` makes the whole disjunction `true`.
-            let branch = relax(branch, columns)?;
+            let branch = relax(branch, columns, input)?;
             // `false` branches (e.g. empty join partitions) add nothing to the disjunction.
             if branch != lit(false) {
                 branches.push(branch);
@@ -222,7 +230,7 @@ fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
         return Some(branches.into_iter().reduce(Expr::or).unwrap_or(lit(false)));
     }
 
-    exact(expr, columns)
+    exact(expr, columns, input)
 }
 
 /// Returns a logical expression equivalent to `expr`, or `None` if it cannot be translated.
@@ -231,24 +239,33 @@ fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
 /// not supported, the whole expression is `None`. Supported are:
 ///
 /// - columns, resolved through `columns` (see [`Columns`]), and literals;
-/// - binary expressions with any operator, e.g. comparisons, `AND`/`OR`, arithmetic;
-/// - `IN` / `NOT IN` lists, `CAST`, `TRY_CAST`, `[NOT] [I]LIKE`, `NOT`, `IS NULL`,
-///   `IS NOT NULL` and negation.
+/// - binary expressions with any operator, e.g. comparisons, `AND`/`OR`, arithmetic, as long as
+///   neither operand is a string or binary value (see [`is_string`]);
+/// - `IN` / `NOT IN` lists of values that are not strings or binary values, `CAST`, `TRY_CAST`,
+///   `NOT`, `IS NULL`, `IS NOT NULL` and negation.
 ///
-/// Anything else, e.g. `CASE`, scalar functions or a hash table lookup, is not supported.
+/// Anything else, e.g. `CASE`, `[NOT] [I]LIKE`, scalar functions or a hash table lookup, is not
+/// supported.
+///
+/// Comparisons of strings are not supported because the remote may compare them differently than
+/// DataFusion, which compares their bytes. Even an equality is not safe: e.g. with a
+/// case-insensitive collation, `NOT s IN ('a')` drops `'A'` at the remote.
 ///
 /// # Examples
 ///
-/// With `columns` = `[("a", t.a), ("s", t.s)]`:
+/// With `columns` = `[("a", t.a), ("s", t.s)]`, `a` being an integer and `s` a string:
 ///
 /// ```text
 /// CAST(a@0 AS Int32) = 1          =>  Some(CAST(t.a AS Int32) = 1)
-/// s@1 NOT ILIKE 'x%'              =>  Some(t.s NOT ILIKE 'x%')
 /// NOT a@0 IN (1, 2)               =>  Some(NOT t.a IN (1, 2))
+/// s@1 IS NULL                     =>  Some(t.s IS NULL)
+/// s@1 = 'x'                       =>  None
+/// CAST(a@0 AS Utf8) < 'x'         =>  None
+/// s@1 NOT ILIKE 'x%'              =>  None
 /// a@0 > 1 AND hash_lookup(a@0)    =>  None
 /// b@0 > 1                         =>  None  (the column at index 0 is `a`)
 /// ```
-fn exact(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
+fn exact(expr: &Arc<dyn PhysicalExpr>, columns: &Columns, input: &Schema) -> Option<Expr> {
     if let Some(column) = expr.downcast_ref::<phys::Column>() {
         let (name, output) = columns.get(column.index())?;
         if *name != column.name() {
@@ -262,21 +279,27 @@ fn exact(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
     }
 
     if let Some(binary) = expr.downcast_ref::<phys::BinaryExpr>() {
+        if is_string(binary.left(), input) || is_string(binary.right(), input) {
+            return None;
+        }
         return Some(Expr::BinaryExpr(BinaryExpr::new(
-            Box::new(exact(binary.left(), columns)?),
+            Box::new(exact(binary.left(), columns, input)?),
             *binary.op(),
-            Box::new(exact(binary.right(), columns)?),
+            Box::new(exact(binary.right(), columns, input)?),
         )));
     }
 
     if let Some(in_list) = expr.downcast_ref::<phys::InListExpr>() {
+        if is_string(in_list.expr(), input) {
+            return None;
+        }
         let list = in_list
             .list()
             .iter()
-            .map(|item| exact(item, columns))
+            .map(|item| exact(item, columns, input))
             .collect::<Option<Vec<_>>>()?;
         return Some(Expr::InList(InList::new(
-            Box::new(exact(in_list.expr(), columns)?),
+            Box::new(exact(in_list.expr(), columns, input)?),
             list,
             in_list.negated(),
         )));
@@ -284,48 +307,64 @@ fn exact(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
 
     if let Some(cast) = expr.downcast_ref::<phys::CastExpr>() {
         return Some(Expr::Cast(Cast::new(
-            Box::new(exact(cast.expr(), columns)?),
+            Box::new(exact(cast.expr(), columns, input)?),
             cast.cast_type().clone(),
         )));
     }
 
     if let Some(cast) = expr.downcast_ref::<phys::TryCastExpr>() {
         return Some(Expr::TryCast(TryCast::new(
-            Box::new(exact(cast.expr(), columns)?),
+            Box::new(exact(cast.expr(), columns, input)?),
             cast.cast_type().clone(),
         )));
     }
 
-    if let Some(like) = expr.downcast_ref::<phys::LikeExpr>() {
-        return Some(Expr::Like(Like::new(
-            like.negated(),
-            Box::new(exact(like.expr(), columns)?),
-            Box::new(exact(like.pattern(), columns)?),
-            None,
-            like.case_insensitive(),
-        )));
-    }
-
     if let Some(not) = expr.downcast_ref::<phys::NotExpr>() {
-        return Some(Expr::Not(Box::new(exact(not.arg(), columns)?)));
+        return Some(Expr::Not(Box::new(exact(not.arg(), columns, input)?)));
     }
 
     if let Some(is_null) = expr.downcast_ref::<phys::IsNullExpr>() {
-        return Some(Expr::IsNull(Box::new(exact(is_null.arg(), columns)?)));
+        return Some(Expr::IsNull(Box::new(exact(
+            is_null.arg(),
+            columns,
+            input,
+        )?)));
     }
 
     if let Some(is_not_null) = expr.downcast_ref::<phys::IsNotNullExpr>() {
         return Some(Expr::IsNotNull(Box::new(exact(
             is_not_null.arg(),
             columns,
+            input,
         )?)));
     }
 
     if let Some(negative) = expr.downcast_ref::<phys::NegativeExpr>() {
-        return Some(Expr::Negative(Box::new(exact(negative.arg(), columns)?)));
+        return Some(Expr::Negative(Box::new(exact(
+            negative.arg(),
+            columns,
+            input,
+        )?)));
     }
 
     None
+}
+
+/// Whether `expr`, evaluated against `input`, is a string or binary value, possibly dictionary
+/// encoded. If its type cannot be determined, it is assumed to be one.
+///
+/// Comparisons of such values are not translated by [`exact`]: DataFusion compares them byte by
+/// byte, while the remote may use a collation, e.g. a case-insensitive or a pad-space one. With
+/// one of them, `s <> 'a'` drops `'A'` and `'a '` at the remote, although DataFusion keeps them.
+fn is_string(expr: &Arc<dyn PhysicalExpr>, input: &Schema) -> bool {
+    fn is_string_type(data_type: &DataType) -> bool {
+        match data_type {
+            DataType::Dictionary(_, value) => is_string_type(value),
+            data_type => data_type.is_string() || data_type.is_binary(),
+        }
+    }
+    expr.data_type(input)
+        .map_or(true, |data_type| is_string_type(&data_type))
 }
 
 #[cfg(test)]
@@ -527,7 +566,6 @@ mod tests {
                 &schema,
             )
             .unwrap(),
-            Arc::new(phys::LikeExpr::new(true, true, s, phys_lit("x%"))),
         ];
 
         let expected = [
@@ -536,18 +574,148 @@ mod tests {
             Expr::Negative(Box::new(col("t.a"))).lt(lit(0i64)),
             Expr::Cast(Cast::new(Box::new(col("t.a")), DataType::Int32)).eq(lit(1i32)),
             Expr::TryCast(TryCast::new(Box::new(col("t.s")), DataType::Int64)).eq(lit(1i64)),
-            Expr::Like(Like::new(
-                true,
-                Box::new(col("t.s")),
-                Box::new(lit("x%")),
-                None,
-                true,
-            )),
         ]
         .into_iter()
         .reduce(Expr::and);
 
         assert_eq!(translate(&filters), expected);
+    }
+
+    #[test]
+    fn does_not_translate_string_comparisons() {
+        let (schema, _) = schemas();
+        let s = phys_col("s", &schema).unwrap();
+        for op in [
+            Operator::Eq,
+            Operator::NotEq,
+            Operator::Lt,
+            Operator::LtEq,
+            Operator::Gt,
+            Operator::GtEq,
+            Operator::IsDistinctFrom,
+            Operator::IsNotDistinctFrom,
+            Operator::RegexMatch,
+            Operator::RegexNotIMatch,
+        ] {
+            let filter = binary(Arc::clone(&s), op, phys_lit("x"), &schema).unwrap();
+            assert_eq!(translate(&[filter]), None, "s {op} 'x'");
+            let swapped = binary(phys_lit("x"), op, Arc::clone(&s), &schema).unwrap();
+            assert_eq!(translate(&[swapped]), None, "'x' {op} s");
+        }
+    }
+
+    #[test]
+    fn does_not_translate_string_in_lists() {
+        let (schema, _) = schemas();
+        let s = phys_col("s", &schema).unwrap();
+        for negated in [false, true] {
+            let list = in_list(
+                Arc::clone(&s),
+                vec![phys_lit("x"), phys_lit("y")],
+                &negated,
+                &schema,
+            )
+            .unwrap();
+            assert_eq!(translate(&[list]), None, "negated: {negated}");
+        }
+    }
+
+    #[test]
+    fn does_not_translate_like() {
+        let (schema, _) = schemas();
+        let s = phys_col("s", &schema).unwrap();
+        for (negated, case_insensitive) in [(false, false), (true, false), (false, true)] {
+            let like = Arc::new(phys::LikeExpr::new(
+                negated,
+                case_insensitive,
+                Arc::clone(&s),
+                phys_lit("x%"),
+            ));
+            assert_eq!(translate(&[like]), None);
+        }
+    }
+
+    #[test]
+    fn does_not_translate_comparisons_of_values_cast_to_strings() {
+        let (schema, _) = schemas();
+        let a = phys_col("a", &schema).unwrap();
+        let filter = binary(
+            Arc::new(phys::CastExpr::new(a, DataType::Utf8, None)),
+            Operator::Lt,
+            phys_lit("10"),
+            &schema,
+        )
+        .unwrap();
+        assert_eq!(translate(&[filter]), None);
+    }
+
+    #[test]
+    fn translates_string_columns_outside_of_comparisons() {
+        let (schema, _) = schemas();
+        let s = phys_col("s", &schema).unwrap();
+        // The string is cast to an integer at the remote, which compares integers.
+        let filter = binary(
+            Arc::new(phys::CastExpr::new(Arc::clone(&s), DataType::Int64, None)),
+            Operator::Eq,
+            phys_lit(1i64),
+            &schema,
+        )
+        .unwrap();
+        let is_null = Arc::new(phys::IsNullExpr::new(s));
+        assert_eq!(
+            translate(&[filter, is_null]),
+            Some(
+                Expr::Cast(Cast::new(Box::new(col("t.s")), DataType::Int64))
+                    .eq(lit(1i64))
+                    .and(col("t.s").is_null())
+            )
+        );
+    }
+
+    #[test]
+    fn does_not_translate_comparisons_of_binary_and_dictionary_encoded_strings() {
+        let schema = Schema::new(vec![
+            Field::new("bin", DataType::Binary, true),
+            Field::new("view", DataType::Utf8View, true),
+            Field::new(
+                "dict",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+        ]);
+        let df_schema = DFSchema::try_from_qualified_schema("t", &schema).unwrap();
+        for (i, field) in schema.fields().iter().enumerate() {
+            let column: Arc<dyn PhysicalExpr> = Arc::new(phys::Column::new(field.name(), i));
+            let other: Arc<dyn PhysicalExpr> = Arc::new(phys::Column::new(field.name(), i));
+            let filter = binary(column, Operator::Eq, other, &schema).unwrap();
+            assert_eq!(
+                filters_to_predicate(&[filter], &schema, &df_schema).unwrap(),
+                None,
+                "{field}"
+            );
+        }
+    }
+
+    #[test]
+    fn keeps_only_the_non_string_keys_of_a_join_filter() {
+        // The filter of a join on `a = .. AND s = ..`.
+        let (schema, _) = schemas();
+        let a = phys_col("a", &schema).unwrap();
+        let s = phys_col("s", &schema).unwrap();
+        let bounds = [
+            binary(Arc::clone(&a), Operator::GtEq, phys_lit(1i64), &schema).unwrap(),
+            binary(Arc::clone(&a), Operator::LtEq, phys_lit(3i64), &schema).unwrap(),
+            binary(Arc::clone(&s), Operator::GtEq, phys_lit("x"), &schema).unwrap(),
+            binary(s, Operator::LtEq, phys_lit("y"), &schema).unwrap(),
+        ];
+        let filter = bounds
+            .into_iter()
+            .reduce(|l, r| binary(l, Operator::And, r, &schema).unwrap())
+            .unwrap();
+        assert_eq!(
+            translate(&[filter]),
+            Some(col("t.a").gt_eq(lit(1i64)).and(col("t.a").lt_eq(lit(3i64))))
+        );
     }
 
     #[test]
