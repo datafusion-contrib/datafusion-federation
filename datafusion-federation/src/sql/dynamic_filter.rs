@@ -1,5 +1,65 @@
 //! Translation of runtime filters (e.g. `DynamicFilterPhysicalExpr` produced by joins and TopK)
 //! into a logical predicate that can be unparsed into the SQL sent to the remote.
+//!
+//! # Use case
+//!
+//! Imagine the following use case:
+//!
+//! Two remote data sources, `orders`:
+//!
+//! ```csv
+//! order_id,customer_id,order_name
+//! 1,2,"order 1"
+//! 2,1,"order 2"
+//! 3,2,"order 3"
+//! 4,3,"order 4"
+//! ```
+//!
+//! and `customers`:
+//!
+//! ```csv
+//! customer_id,customer_name,customer_type
+//! 1,"customer 1","normal"
+//! 2,"customer 2","bronze"
+//! 3,"customer 3","silver"
+//! 4,"customer 4","gold"
+//! ```
+//!
+//! And you want to get all the details about customers with type `bronze` and their orders:
+//!
+//! ```sql
+//! SELECT c.*, o.* FROM customers c
+//! INNER JOIN orders o ON o.customer_id = c.customer_id
+//! WHERE c.customer_type = 'bronze'
+//! ```
+//!
+//! Without dynamic filters DataFusion Federation will make a scan over the whole `orders` table
+//! and then filter out the not needed rows in memory when doing the join by customer id.
+//! With dynamic filters only the orders for the customers with type `bronze` will be returned.
+//!
+//! # Implementation details
+//!
+//! The filters pushed down into a `VirtualExecutionPlan` are physical expressions over its output
+//! columns. For example, after a hash join has built its hash table from
+//! `SELECT * FROM customers WHERE customer_type = 'bronze'`, the filter it pushes to the
+//! `orders` scan may read:
+//!
+//! ```text
+//! DynamicFilter [ customer_id@1 >= 2 AND customer_id@1 <= 2 AND customer_id@1 IN (SET) ([2]) ]
+//! ```
+//!
+//! [`filters_to_predicate`] turns this into the logical expression
+//!
+//! ```text
+//! federated_filtered.customer_id >= 2 AND federated_filtered.customer_id <= 2
+//!     AND federated_filtered.customer_id IN (2)
+//! ```
+//!
+//! which `VirtualExecutionPlan` adds as a `WHERE` clause on top of the federated query.
+//!
+//! Not every physical expression has a SQL equivalent, so the translation is a *relaxation* (see
+//! [`relax`]): untranslatable parts are widened until the predicate can be expressed, and the
+//! remote may return more rows than the filters would keep, but never fewer.
 
 use std::sync::Arc;
 
@@ -20,13 +80,40 @@ use datafusion::{
 /// `None` if nothing could be translated. `output` must have the same fields in the same order as
 /// `input`, though their names may differ (e.g. when deduplicated by a derived table).
 ///
+/// Each filter is translated with [`relax`], and the translated filters are combined with `AND`.
+/// Filters that relax to `true` are left out, so the result is `None` if there are no filters or
+/// none of them constrains anything.
+///
 /// The predicate is a relaxation: every row for which all `filters` are true also satisfies the
 /// predicate, but not necessarily the other way around. Parts that cannot be expressed in SQL
 /// (such as hash table lookups or the hash routing of partitioned joins) are widened to `true`.
 /// This is sound because the remote only gets to drop rows the filters would drop anyway, while
 /// DataFusion still evaluates the original filters locally.
 ///
-/// Dynamic filters are snapshotted, so the result reflects their state at the time of the call.
+/// Dynamic filters are snapshotted, so the result reflects their state at the time of the call:
+/// an empty `DynamicFilter` (still `true`) translates to nothing, and the same filter translates
+/// to its current expression once the join or TopK producing it has updated it.
+///
+/// Columns are resolved by index, and are only translated if their name matches the field of
+/// `input` at that index; columns out of sync with `input` are treated as untranslatable.
+///
+/// # Example
+///
+/// With `input` = `[a, a]` (e.g. both sides of a self join), `output` = the derived table
+/// `federated_filtered` with columns `[a, "a:1"]`, and the filters:
+///
+/// ```text
+/// [ a@1 > 5,  DynamicFilter [ a@0 >= 1 AND a@0 <= 9 AND hash_lookup(a@0) ] ]
+/// ```
+///
+/// the result is
+///
+/// ```text
+/// Some(federated_filtered."a:1" > 5 AND (federated_filtered.a >= 1 AND federated_filtered.a <= 9))
+/// ```
+///
+/// The `hash_lookup` has no SQL equivalent and is dropped from its conjunction, and `a@1`
+/// resolves to the deduplicated `"a:1"` column of `output`.
 pub(crate) fn filters_to_predicate(
     filters: &[Arc<dyn PhysicalExpr>],
     input: &Schema,
@@ -51,9 +138,44 @@ pub(crate) fn filters_to_predicate(
 
 /// The columns the filters refer to, by index: their name in the filters and the column to use in
 /// the predicate.
+///
+/// For a physical `Column { name: "a", index: 1 }`, entry `1` must be `("a", <column>)`, and the
+/// column is translated to `Expr::Column(<column>)`. For example, `[("a", t.a), ("a", t."a:1")]`
+/// maps `a@0` to `t.a` and `a@1` to `t."a:1"`.
 type Columns<'a> = [(&'a str, Column)];
 
 /// Returns a predicate implied by `expr`, where `None` stands for `true` (no constraint).
+///
+/// "Implied" means that every row for which `expr` is true also satisfies the returned predicate,
+/// so filtering with it never drops a row that `expr` keeps. `expr` is widened where needed:
+///
+/// - `true` relaxes to `None`; any other literal (e.g. `false` from a join with an empty build
+///   side) is kept as is.
+/// - `l AND r` relaxes both sides and drops the ones that relax to `true`.
+/// - `l OR r` relaxes both sides, and is `true` if either side is.
+/// - `CASE [operand] WHEN .. THEN t1 WHEN .. THEN t2 .. [ELSE e] END` relaxes to `t1 OR t2 OR .. OR
+///   e`: whichever branch is picked must be true for the `CASE` to be true. The operand and `WHEN`
+///   conditions, such as the `hash_repartition(key) % n` routing of partitioned joins, are
+///   dropped, as are `false` branches. A `CASE` whose branches are all `false` relaxes to `false`.
+/// - Everything else must be translated as a whole by [`exact`], or relaxes to `true`.
+///
+/// Relaxing only happens at the top and through `AND`, `OR` and `CASE`. Below other operators,
+/// widening would be wrong: e.g. widening `x` in `NOT x` would narrow down the `NOT`.
+///
+/// # Examples
+///
+/// ```text
+/// a@0 > 1 AND hash_lookup(a@0)             =>  Some(a > 1)
+/// a@0 > 1 OR hash_lookup(a@0)              =>  None
+/// NOT (a@0 > 1 AND hash_lookup(a@0))       =>  None
+/// CASE hash_repartition(a@0) % 2
+///     WHEN 0 THEN a@0 IN (1, 3)
+///     WHEN 1 THEN a@0 IN (2)
+///     ELSE false
+/// END                                      =>  Some(a IN (1, 3) OR a IN (2))
+/// CASE .. WHEN 0 THEN a@0 = 1 ELSE true    =>  None
+/// false                                    =>  Some(false)
+/// ```
 fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
     if let Some(literal) = expr.downcast_ref::<phys::Literal>() {
         return match literal.value() {
@@ -103,6 +225,28 @@ fn relax(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
 }
 
 /// Returns a logical expression equivalent to `expr`, or `None` if it cannot be translated.
+///
+/// Unlike [`relax`], nothing is widened: `expr` is translated node by node, and if any node is
+/// not supported, the whole expression is `None`. Supported are:
+///
+/// - columns, resolved through `columns` (see [`Columns`]), and literals;
+/// - binary expressions with any operator, e.g. comparisons, `AND`/`OR`, arithmetic;
+/// - `IN` / `NOT IN` lists, `CAST`, `TRY_CAST`, `[NOT] [I]LIKE`, `NOT`, `IS NULL`,
+///   `IS NOT NULL` and negation.
+///
+/// Anything else, e.g. `CASE`, scalar functions or a hash table lookup, is not supported.
+///
+/// # Examples
+///
+/// With `columns` = `[("a", t.a), ("s", t.s)]`:
+///
+/// ```text
+/// CAST(a@0 AS Int32) = 1          =>  Some(CAST(t.a AS Int32) = 1)
+/// s@1 NOT ILIKE 'x%'              =>  Some(t.s NOT ILIKE 'x%')
+/// NOT a@0 IN (1, 2)               =>  Some(NOT t.a IN (1, 2))
+/// a@0 > 1 AND hash_lookup(a@0)    =>  None
+/// b@0 > 1                         =>  None  (the column at index 0 is `a`)
+/// ```
 fn exact(expr: &Arc<dyn PhysicalExpr>, columns: &Columns) -> Option<Expr> {
     if let Some(column) = expr.downcast_ref::<phys::Column>() {
         let (name, output) = columns.get(column.index())?;

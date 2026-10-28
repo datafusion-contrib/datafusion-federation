@@ -267,7 +267,7 @@ fn dynamic_filter_sql(sql: &str) -> Option<&str> {
 }
 
 /// The dynamic filter a hash join derives from its build side (customers with
-/// `account_number = 22`) is pushed into the SQL sent to the probe side (orders),
+/// `customer_type = 'bronze'`) is pushed into the SQL sent to the probe side (orders),
 /// so the orders remote only returns orders of matching customers.
 #[tokio::test]
 async fn join_dynamic_filter_is_pushed_to_remote() {
@@ -276,7 +276,7 @@ async fn join_dynamic_filter_is_pushed_to_remote() {
         .run(
             "SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
@@ -305,33 +305,18 @@ async fn join_dynamic_filter_is_pushed_to_remote() {
             && predicate.contains("federated_filtered.customer_id in (2)"),
         "the filter should restrict orders to customer 2: {predicate}"
     );
-    assert!(
-        plan.contains("filters=[DynamicFilter [ ") && !plan.contains("DynamicFilter [ empty ]"),
-        "the populated dynamic filter should be displayed: {plan}"
-    );
-}
-
-/// The orders remote only returns the orders of the matching customers.
-#[tokio::test]
-async fn join_dynamic_filter_restricts_remote_rows() {
-    let fixture = JoinFixture::new().await;
-    // Count what the remote returns by running the recorded query against the same data.
-    let (batches, _) = fixture
-        .run(
-            "SELECT o.order_id FROM customers c \
-             INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
-        )
-        .await;
-    assert_eq!(row_count(&batches), 2);
-
-    let orders_sql = fixture.orders_queries.lock().unwrap()[0].clone();
+    // Rerun the remote's query against the same data to count the rows it returned.
+    let remote_sql = fixture.orders_queries.lock().unwrap()[0].clone();
     let remote = remote_ctx("orders", "orders.csv").await;
-    let remote_rows = support::collect(remote.sql(&orders_sql).await.expect("remote query")).await;
+    let remote_rows = support::collect(remote.sql(&remote_sql).await.expect("remote query")).await;
     assert_eq!(
         row_count(&remote_rows),
         2,
-        "the remote should only return the 2 orders of customer 2, not all 4: {orders_sql}"
+        "the remote should only return the 2 orders of customer 2, not all 4: {remote_sql}"
+    );
+    assert!(
+        plan.contains("filters=[DynamicFilter [ ") && !plan.contains("DynamicFilter [ empty ]"),
+        "the populated dynamic filter should be displayed: {plan}"
     );
 }
 
@@ -343,7 +328,7 @@ async fn join_dynamic_filter_with_several_build_rows() {
         .run(
             "SELECT o.order_id FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number IN (11, 22) \
+             WHERE c.customer_type IN ('normal', 'bronze') \
              ORDER BY o.order_id",
         )
         .await;
@@ -374,7 +359,7 @@ async fn join_dynamic_filter_with_empty_build_side() {
         .run(
             "SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 99",
+             WHERE c.customer_type = 'platinum'",
         )
         .await;
 
@@ -402,7 +387,7 @@ async fn join_dynamic_filter_in_collect_left_mode() {
         .run(
             "SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
@@ -429,7 +414,7 @@ async fn join_dynamic_filter_hash_lookup_pushes_only_bounds() {
         .run(
             "SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
@@ -458,7 +443,7 @@ async fn join_without_dynamic_filter_pushdown() {
         .run(
             "SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
@@ -478,7 +463,7 @@ async fn left_join_keeps_all_rows_of_the_preserved_side() {
     let (batches, _) = fixture
         .run(
             "SELECT o.order_id, c.customer_name FROM orders o \
-             LEFT JOIN (SELECT * FROM customers WHERE account_number = 22) c \
+             LEFT JOIN (SELECT * FROM customers WHERE customer_type = 'bronze') c \
              ON o.customer_id = c.customer_id",
         )
         .await;
@@ -501,7 +486,7 @@ async fn join_dynamic_filter_is_applied_after_remote_limit() {
             "SELECT c.customer_id, o.order_id FROM customers c \
              INNER JOIN (SELECT * FROM orders ORDER BY order_id LIMIT 2) o \
              ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
@@ -525,7 +510,7 @@ async fn explain_analyze_shows_dynamic_filter() {
         .run(
             "EXPLAIN ANALYZE SELECT c.*, o.* FROM customers c \
              INNER JOIN orders o ON o.customer_id = c.customer_id \
-             WHERE c.account_number = 22",
+             WHERE c.customer_type = 'bronze'",
         )
         .await;
 
