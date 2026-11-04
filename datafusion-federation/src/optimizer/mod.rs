@@ -154,8 +154,13 @@ impl FederationOptimizerRule {
         let exprs_result = self.scan_plan_exprs(plan)?;
         let optimize_expressions = exprs_result.is_some();
 
-        // Return early if this is a leaf and there is no ambiguity with the expressions.
-        if leaf_provider.is_some() && (exprs_result.is_none() || exprs_result == leaf_provider) {
+        // Return early if this is a leaf below the root and there is no ambiguity with the
+        // expressions. A leaf at the root falls through, so that a plan that is only a
+        // TableScan is handed to its provider's optimizer below.
+        if !is_root
+            && leaf_provider.is_some()
+            && (exprs_result.is_none() || exprs_result == leaf_provider)
+        {
             return Ok((None, leaf_provider.into()));
         }
         // Aggregate leaf & expression providers
