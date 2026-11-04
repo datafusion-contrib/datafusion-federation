@@ -34,6 +34,32 @@ async fn select_star_returns_all_rows() {
     );
 }
 
+/// A plan that is only a table scan, as `SessionContext::table` builds it, is
+/// federated to the remote instead of being scanned through the adaptor.
+#[tokio::test]
+async fn table_scan_alone_is_federated() {
+    use datafusion::execution::context::SessionContext;
+    use std::sync::Arc;
+
+    let ctx = remote_ctx("test", "test.csv").await;
+    let executor = RecordingSQLExecutor::new("sqlite", "sqlite_exec", ctx);
+    let queries = executor.queries();
+    let schema = schema_provider(Arc::new(executor), &["test"]).await;
+
+    let state = datafusion_federation::default_session_state();
+    support::overwrite_default_schema(&state, schema);
+    let ctx = SessionContext::new_with_state(state);
+
+    let batches = support::collect(ctx.table("test").await.expect("table")).await;
+
+    assert_eq!(row_count(&batches), 3, "test.csv has 3 rows");
+    assert!(
+        recorded_sql(&queries).contains("test"),
+        "remote should have received a scan of its table, got: {:?}",
+        queries.lock().unwrap()
+    );
+}
+
 /// A `WHERE` clause is pushed down to the remote as SQL, not applied locally.
 #[tokio::test]
 async fn filter_is_pushed_down() {
