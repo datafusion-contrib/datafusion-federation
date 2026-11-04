@@ -4,17 +4,17 @@ resolver = "2"
 members = ["datafusion-federation"]
 
 [workspace.package]
-version = "0.5.8"
+version = "0.6.0"
 edition = "2021"
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/datafusion-contrib/datafusion-federation"
 
 [workspace.dependencies]
-arrow-json = "59.2"
+arrow-json = "60.1"
 async-stream = "0.3"
 async-trait = "0.1"
-datafusion = { version = "55", default-features = false }
-datafusion-federation = { path = "./datafusion-federation", version = "0.5.8" }
+datafusion = { git = "https://github.com/apache/datafusion.git", branch = "branch-56", version = "56.0.0-dev", default-features = false }
+datafusion-federation = { path = "./datafusion-federation", version = "0.6.0" }
 futures = "0.3"
 tokio = { version = "1.41", features = ["full"] }
