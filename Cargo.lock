@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "datafusion-federation"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "arrow-json",
  "async-stream",

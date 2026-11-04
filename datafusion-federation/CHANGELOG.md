@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.9](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.8...v0.5.9) - 2026-11-04
+
+### Fixed
+
+- Federate a plan that is only a table scan ([#192](https://github.com/datafusion-contrib/datafusion-federation/pull/192))
+
 ## [0.5.8](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.7...v0.5.8) - 2026-10-22
 
 ### Fixed
