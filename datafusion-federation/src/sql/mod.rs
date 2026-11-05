@@ -439,23 +439,25 @@ impl ExecutionPlan for VirtualExecutionPlan {
         _context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         if self.filters.is_empty() {
-            return self
-                .executor
-                .execute(&self.final_sql()?, self.schema(), &[]);
+            self.executor
+                .execute(&self.final_sql()?, self.schema(), &[])
+        } else if !self.executor.supports_dynamic_filter_pushdown() {
+            self.executor
+                .execute(&self.final_sql()?, self.schema(), self.filters.as_ref())
+        } else {
+            // Dynamic filters are only populated once execution is underway (e.g. after a join has
+            // built its hash table), so the SQL query is generated when the stream is first polled.
+            let this = self.clone();
+            let stream = futures::stream::once(async move {
+                let sql = this.final_sql_with_filters()?;
+                this.executor.execute(&sql, this.schema(), &this.filters)
+            })
+            .try_flatten();
+            Ok(Box::pin(RecordBatchStreamAdapter::new(
+                self.schema(),
+                stream,
+            )))
         }
-
-        // Dynamic filters are only populated once execution is underway (e.g. after a join has
-        // built its hash table), so the SQL query is generated when the stream is first polled.
-        let this = self.clone();
-        let stream = futures::stream::once(async move {
-            let sql = this.final_sql_with_filters()?;
-            this.executor.execute(&sql, this.schema(), &this.filters)
-        })
-        .try_flatten();
-        Ok(Box::pin(RecordBatchStreamAdapter::new(
-            self.schema(),
-            stream,
-        )))
     }
 
     fn properties(&self) -> &Arc<PlanProperties> {
@@ -1019,6 +1021,10 @@ mod tests {
     #[derive(Debug, Clone, Default)]
     struct RecordingExecutor {
         queries: Arc<std::sync::Mutex<Vec<String>>>,
+        /// Number of filters received by each `execute` call.
+        filter_counts: Arc<std::sync::Mutex<Vec<usize>>>,
+        /// When set, the executor opts out of dynamic filter pushdown.
+        no_dynamic_filters: bool,
     }
 
     impl RecordingExecutor {
@@ -1045,12 +1051,17 @@ mod tests {
             &self,
             query: &str,
             schema: SchemaRef,
-            _filters: &[Arc<dyn PhysicalExpr>],
+            filters: &[Arc<dyn PhysicalExpr>],
         ) -> Result<SendableRecordBatchStream> {
             self.queries.lock().unwrap().push(query.to_string());
+            self.filter_counts.lock().unwrap().push(filters.len());
             Ok(Box::pin(
                 datafusion::physical_plan::EmptyRecordBatchStream::new(schema),
             ))
+        }
+
+        fn supports_dynamic_filter_pushdown(&self) -> bool {
+            !self.no_dynamic_filters
         }
 
         async fn table_names(&self) -> Result<Vec<String>> {
@@ -1203,6 +1214,58 @@ mod tests {
         let plan = recording_plan(&executor, recording_scan(&executor, "t"), vec![]);
         let _stream = plan.execute(0, Arc::new(TaskContext::default())).unwrap();
         assert_eq!(executor.queries(), vec![plan.final_sql().unwrap()]);
+    }
+
+    #[test]
+    fn dynamic_filter_pushdown_is_supported_by_default() {
+        assert!(RecordingExecutor::default().supports_dynamic_filter_pushdown());
+    }
+
+    /// An executor opting out must get the plain SQL, immediately, without waiting for the
+    /// dynamic filters to be populated.
+    #[test]
+    fn executor_without_dynamic_filter_support_executes_plain_sql_immediately() {
+        use datafusion::physical_expr::expressions::DynamicFilterPhysicalExpr;
+
+        let executor = RecordingExecutor {
+            no_dynamic_filters: true,
+            ..Default::default()
+        };
+        assert!(!executor.supports_dynamic_filter_pushdown());
+
+        let plan = recording_scan(&executor, "t");
+        let schema = plan.schema().as_arrow().clone();
+        let a = col("a", &schema).unwrap();
+        let dynamic = Arc::new(DynamicFilterPhysicalExpr::new(vec![a], lit(true)));
+        let plan = recording_plan(&executor, plan, vec![Arc::clone(&dynamic) as _]);
+
+        // Executed eagerly, i.e. before the stream is polled.
+        let _stream = plan.execute(0, Arc::new(TaskContext::default())).unwrap();
+        assert_eq!(executor.queries(), vec![plan.final_sql().unwrap()]);
+
+        // Filters populated later do not change the SQL that was already sent.
+        dynamic.update(a_greater_than(&schema, 5)).unwrap();
+        assert_eq!(executor.queries(), vec![plan.final_sql().unwrap()]);
+        assert!(!executor.queries()[0].contains("federated_filtered"));
+    }
+
+    #[tokio::test]
+    async fn executor_without_dynamic_filter_support_never_wraps_the_sql() {
+        use futures::StreamExt;
+
+        let executor = RecordingExecutor {
+            no_dynamic_filters: true,
+            ..Default::default()
+        };
+        let plan = recording_scan(&executor, "t");
+        let schema = plan.schema().as_arrow().clone();
+        let plan = recording_plan(&executor, plan, vec![a_greater_than(&schema, 1)]);
+
+        let mut stream = plan.execute(0, Arc::new(TaskContext::default())).unwrap();
+        assert!(stream.next().await.is_none());
+
+        assert_eq!(executor.queries(), vec!["SELECT * FROM t".to_string()]);
+        assert!(!executor.queries()[0].contains("federated_filtered"));
     }
 
     #[test]
