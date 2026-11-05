@@ -45,9 +45,13 @@ pub trait SQLExecutor: Sync + Send {
     /// Execute a SQL query.
     ///
     /// `filters` contain physical expressions generated at runtime, like
-    /// `DynamicFilterPhysicalExpr`. Since the concrete expression values only become available when
-    /// the `SendableRecordBatchStream` is executed, they must be manually added to the SQL query,
-    /// if necessary. However, they can be safely ignored.
+    /// `DynamicFilterPhysicalExpr`. The parts of them that can be expressed in SQL are already
+    /// applied to `query`, as a `WHERE` clause over the federated query. They are passed for
+    /// executors that can apply more of them (e.g. hash table lookups); otherwise they can be
+    /// safely ignored. Either way, DataFusion keeps evaluating them locally.
+    ///
+    /// When `filters` is not empty, this is called when the returned stream is first polled
+    /// rather than when the plan is executed, so that dynamic filters are populated.
     fn execute(
         &self,
         query: &str,
@@ -71,6 +75,11 @@ pub trait SQLExecutor: Sync + Send {
     /// Returns the execution metrics, if available.
     fn metrics(&self) -> Option<MetricsSet> {
         None
+    }
+
+    /// Whether dynamic filters may be pushed down into the SQL sent to this executor.
+    fn supports_dynamic_filter_pushdown(&self) -> bool {
+        true
     }
 }
 
