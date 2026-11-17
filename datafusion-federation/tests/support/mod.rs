@@ -13,8 +13,8 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use datafusion::{
-    arrow::{array::RecordBatch, datatypes::SchemaRef},
-    catalog::SchemaProvider,
+    arrow::{array::RecordBatch, datatypes::SchemaRef, util::pretty::pretty_format_batches},
+    catalog::{MemTable, SchemaProvider},
     execution::{
         context::{SessionContext, SessionState},
         options::CsvReadOptions,
@@ -26,7 +26,9 @@ use datafusion::{
 };
 use futures::TryStreamExt;
 
-use datafusion_federation::sql::{SQLExecutor, SQLFederationProvider, SQLSchemaProvider};
+use datafusion_federation::sql::{
+    MultiSchemaProvider, SQLExecutor, SQLFederationProvider, SQLSchemaProvider,
+};
 
 /// A CSV-backed [`SQLExecutor`] that records the SQL it is asked to execute.
 ///
@@ -111,6 +113,49 @@ pub async fn remote_ctx(table_name: &str, csv: &str) -> Arc<SessionContext> {
         .await
         .expect("register csv");
     ctx
+}
+
+/// Build a "remote" [`SessionContext`] with `batch` registered as `table_name`, for column
+/// types a CSV cannot express (e.g. `Float32`, NaN, timestamps with a time zone).
+pub fn remote_mem_ctx(table_name: &str, batch: RecordBatch) -> Arc<SessionContext> {
+    let ctx = Arc::new(SessionContext::new());
+    ctx.register_table(table_name, mem_table(batch))
+        .expect("register table");
+    ctx
+}
+
+fn mem_table(batch: RecordBatch) -> Arc<MemTable> {
+    Arc::new(MemTable::try_new(batch.schema(), vec![vec![batch]]).expect("mem table"))
+}
+
+/// Run `query` with each of `tables` in its own federated remote, and assert it returns the
+/// same rows as plain DataFusion over the same tables. `query` should have an `ORDER BY`.
+pub async fn assert_federated_matches_local(tables: &[(&'static str, RecordBatch)], query: &str) {
+    let local = SessionContext::new();
+    let mut remotes: Vec<Arc<dyn SchemaProvider>> = vec![];
+    let mut queries = vec![];
+    for (name, batch) in tables.iter().cloned() {
+        local
+            .register_table(name, mem_table(batch.clone()))
+            .expect("register table");
+        let executor = RecordingSQLExecutor::new(name, name, remote_mem_ctx(name, batch));
+        queries.push(executor.queries());
+        remotes.push(schema_provider(Arc::new(executor), &[name]).await);
+    }
+
+    let expected = collect(local.sql(query).await.expect("plan local query")).await;
+    assert!(row_count(&expected) > 0, "`{query}` should return rows");
+    let actual = run_federated(Arc::new(MultiSchemaProvider::new(remotes)), query).await;
+
+    let sql: Vec<String> = queries.iter().map(recorded_sql).collect();
+    assert_eq!(
+        pretty_format_batches(&actual).expect("format").to_string(),
+        pretty_format_batches(&expected)
+            .expect("format")
+            .to_string(),
+        "federated result differs from DataFusion; remote SQL:\n{}",
+        sql.join("\n")
+    );
 }
 
 /// Register `schema` as the default schema of `state`.
