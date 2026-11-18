@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.10](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.9...v0.5.10) - 2026-11-18
+
+### Other
+
+- Add regression tests for joins on keys that are hard to express  in SQL ([#194](https://github.com/datafusion-contrib/datafusion-federation/pull/194))
+
 ## [0.5.9](https://github.com/datafusion-contrib/datafusion-federation/compare/v0.5.8...v0.5.9) - 2026-11-04
 
 ### Fixed
