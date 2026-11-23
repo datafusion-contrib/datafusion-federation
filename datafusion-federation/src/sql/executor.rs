@@ -76,6 +76,11 @@ pub trait SQLExecutor: Sync + Send {
     fn metrics(&self) -> Option<MetricsSet> {
         None
     }
+
+    /// Whether dynamic filters may be pushed down into the SQL sent to this executor.
+    fn supports_dynamic_filter_pushdown(&self) -> bool {
+        true
+    }
 }
 
 impl fmt::Debug for dyn SQLExecutor {
