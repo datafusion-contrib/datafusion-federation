@@ -1,0 +1,5 @@
+customer_id,customer_name,customer_type
+1,"customer 1","normal"
+2,"customer 2","bronze"
+3,"customer 3","silver"
+4,"customer 4","gold"
