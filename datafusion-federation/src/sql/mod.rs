@@ -122,11 +122,6 @@ impl OptimizerRule for SQLFederationOptimizerRule {
     fn name(&self) -> &str {
         "federate_sql"
     }
-
-    /// Does this rule support rewriting owned plans (rather than by reference)?
-    fn supports_rewrite(&self) -> bool {
-        true
-    }
 }
 
 #[derive(Debug)]
