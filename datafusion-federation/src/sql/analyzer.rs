@@ -109,6 +109,26 @@ fn rewrite_table_scans(
     Ok(new_plan)
 }
 
+/// Apply every known table rewrite to a derived name such as `max(foo.df_table.a)`.
+///
+/// Only names that use the table as a column qualifier (`foo.df_table.` followed by
+/// a column) are touched, so a plain alias that happens to equal a table name
+/// (`SELECT a AS app_table FROM app_table`) keeps its name.
+fn rewrite_derived_name(
+    name: String,
+    known_rewrites: &HashMap<TableReference, TableReference>,
+) -> String {
+    known_rewrites
+        .iter()
+        .fold(name, |name, (table_ref, rewrite)| {
+            let table_ref = table_ref.to_string();
+            if !name.contains(&format!("{table_ref}.")) {
+                return name;
+            }
+            rewrite_column_name_in_expr(&name, &table_ref, &rewrite.to_string(), 0).unwrap_or(name)
+        })
+}
+
 // The function replaces occurrences of table_ref_str in col_name with the new name defined by rewrite.
 // The name to rewrite should NOT be a substring of another name.
 // Supports multiple occurrences of table_ref_str in col_name.
@@ -247,7 +267,16 @@ fn rewrite_table_scans_in_expr(
                     )));
                 }
             }
-            Ok(Expr::Alias(Alias::new(expr, alias.relation, alias.name)))
+            // An unqualified alias can carry a derived name that embeds the
+            // table reference, e.g. `max(foo.df_table.a)` when an expression
+            // was rewritten and aliased back to its original name. Columns
+            // referring to it are renamed by the `Expr::Column` arm above, so
+            // the alias has to be renamed the same way or they stop matching.
+            let name = match alias.relation {
+                Some(_) => alias.name,
+                None => rewrite_derived_name(alias.name, known_rewrites),
+            };
+            Ok(Expr::Alias(Alias::new(expr, alias.relation, name)))
         }
         Expr::Like(like) => {
             let expr = rewrite_table_scans_in_expr(*like.expr, known_rewrites)?;
@@ -620,8 +649,9 @@ mod tests {
         common::Column,
         datasource::{DefaultTableSource, TableProvider},
         execution::context::SessionContext,
+        functions_aggregate::expr_fn::max,
         logical_expr::LogicalPlanBuilder,
-        prelude::Expr,
+        prelude::{lit, Expr},
     };
 
     use super::*;
@@ -876,6 +906,33 @@ mod tests {
         for test in tests {
             test_sql(&ctx, test.0, test.1).await?;
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rewrite_table_scans_derived_alias_name() -> Result<()> {
+        // An expression rewritten under its original derived name, as a
+        // name-preserving optimizer pass or a column-masking rule leaves it:
+        // the aggregate's output is an alias called `max(foo.df_table.b)`,
+        // and the projection above refers to it by that name.
+        let plan = LogicalPlanBuilder::scan("foo.df_table", get_test_table_source(), None)?
+            .aggregate(
+                Vec::<Expr>::new(),
+                vec![max(lit("masked")).alias("max(foo.df_table.b)")],
+            )?
+            .project(vec![Expr::Column(Column::new_unqualified(
+                "max(foo.df_table.b)",
+            ))])?
+            .build()?;
+
+        let rewritten_plan = RewriteTableScanAnalyzer::rewrite(plan)?;
+        let unparsed_sql = plan_to_sql(&rewritten_plan)?;
+
+        assert_eq!(
+            format!("{unparsed_sql}"),
+            r#"SELECT max('masked') AS "max(remote_table.b)" FROM remote_table"#
+        );
 
         Ok(())
     }
